@@ -6,12 +6,16 @@ import ipaddress
 import json
 import os
 import re
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .duration import parse_duration
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    import tomli as tomllib
 
 
 ALIAS_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,30}$")

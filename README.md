@@ -42,12 +42,23 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
 
 ## Installation
 
-### Fedora
+### Linux
 
-1. Install the required system packages:
+`netsudo` supports Python 3.10 and newer.
+
+1. Install the required system packages.
+
+   Fedora:
 
    ```bash
    sudo dnf install -y git python3 python3-pip openssh-clients
+   ```
+
+   Ubuntu/Debian:
+
+   ```bash
+   sudo apt update
+   sudo apt install -y git python3 python3-pip openssh-client
    ```
 
 2. Clone the repository:
@@ -64,6 +75,14 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
    ```
 
    Run this from inside the cloned `netsudo` directory. This is the standard install method for now.
+
+   On newer Ubuntu/Debian releases, if pip exits with `externally-managed-environment`, use:
+
+   ```bash
+   python3 -m pip install --user --break-system-packages .
+   ```
+
+   That still installs `netsudo` in your user site-packages; it does not install pfSense credentials or change firewall state.
 
 4. Check the installed command:
 
