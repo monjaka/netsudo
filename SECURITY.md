@@ -8,6 +8,7 @@
 - Use SSH keys, not stored passwords.
 - After initial setup, restrict the SSH key with a forced command that only runs the netsudo helper.
 - Keep profile maximum durations short.
+- Keep delegated `--source` grants behind sudo-required profiles unless the scope is low risk.
 - Avoid broad `all` profiles unless they require local sudo and have a very short maximum duration.
 - Keep audit logs in Wazuh or another central log collector.
 

@@ -32,6 +32,8 @@ class ConfigTests(unittest.TestCase):
 
         config = load_config(str(path))
         self.assertEqual(config.pfsense.user, "admin")
+        self.assertEqual(config.pfsense.backend, "ssh")
+        self.assertTrue(config.pfsense.batch_mode)
         self.assertEqual(config.profiles["admin"].source_alias, "NETSUDO_ADMIN_SRC")
 
         policy = json.loads(config.policy_json())
@@ -63,6 +65,41 @@ class ConfigTests(unittest.TestCase):
             interfaces = ["lan"]
             destinations = ["192.168.3.0/24"]
             source_alias = "NETSUDO_ALIAS_NAME_THAT_IS_TOO_LONG"
+            """
+        )
+
+        with self.assertRaises(ValueError):
+            load_config(str(path))
+
+    def test_parses_password_prompt_bootstrap_settings(self):
+        path = self.write_config(
+            """
+            [pfsense]
+            host = "192.168.3.1"
+            backend = "ssh"
+            batch_mode = false
+            identity_file = "/home/user/.ssh/netsudo_pfsense"
+
+            [profiles.admin]
+            interfaces = ["lan"]
+            destinations = ["192.168.3.0/24"]
+            """
+        )
+
+        config = load_config(str(path))
+        self.assertFalse(config.pfsense.batch_mode)
+        self.assertEqual(config.pfsense.identity_file, "/home/user/.ssh/netsudo_pfsense")
+
+    def test_rejects_unknown_backend(self):
+        path = self.write_config(
+            """
+            [pfsense]
+            host = "192.168.3.1"
+            backend = "telnet"
+
+            [profiles.admin]
+            interfaces = ["lan"]
+            destinations = ["192.168.3.0/24"]
             """
         )
 

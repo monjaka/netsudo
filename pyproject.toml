@@ -29,6 +29,7 @@ dependencies = []
 
 [project.scripts]
 netsudo = "netsudo.cli:main"
+netsudo-install = "netsudo.installer:main"
 
 [tool.setuptools]
 packages = ["netsudo"]

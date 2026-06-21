@@ -50,6 +50,14 @@ Create a local config:
 netsudo init ./netsudo.toml
 ```
 
+Or use the installer:
+
+```bash
+python3 scripts/install.py
+# or, after package install:
+netsudo-install
+```
+
 Edit `netsudo.toml`, then install the helper and create pfSense aliases/rules:
 
 ```bash
@@ -60,6 +68,12 @@ Grant access:
 
 ```bash
 sudo netsudo allow admin --for 20m --reason "maintenance"
+```
+
+Grant access for another device by specifying its source IP:
+
+```bash
+sudo netsudo allow admin --source 192.168.6.60 --for 20m --reason "workstation maintenance"
 ```
 
 Check grants:
@@ -79,6 +93,8 @@ sudo netsudo revoke last
 Use a dedicated pfSense SSH user or SSH key for automation. For best results, restrict the SSH key on pfSense to the helper command after setup.
 
 Do not store pfSense admin passwords in `netsudo.toml`. The intended model is local `sudo` plus a dedicated SSH key.
+
+The installer can generate a dedicated SSH key and install the public key on pfSense. It may prompt for the pfSense account password through `ssh` or `ssh-copy-id`, but it does not store that password.
 
 See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) for operational guidance.
 

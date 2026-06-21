@@ -20,7 +20,7 @@ from . import __version__
 from .audit import write_audit
 from .config import Config, load_config
 from .duration import format_duration, parse_duration
-from .source import detect_source_ip
+from .source import detect_source_ip, validate_source_ip
 from .transport import TransportError, copy_file, run_helper, run_ssh, shell_quote
 
 
@@ -59,7 +59,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_config_arg(allow_p)
     allow_p.add_argument("profile")
     allow_p.add_argument("--for", dest="duration", default=None, help="duration such as 15m or 1h")
-    allow_p.add_argument("--source", default=None, help="source IP to grant, default auto")
+    allow_p.add_argument("--source", default=None, help="source IPv4 to grant; default auto-detects this host")
     allow_p.add_argument("--reason", default="", help="audit reason")
     allow_p.add_argument("-y", "--yes", action="store_true", help="skip confirmation prompt")
     allow_p.add_argument("--no-sudo-check", action="store_true", help="do not require local root for privileged profiles")
@@ -235,7 +235,7 @@ def resolve_source(config: Config, source_arg: str | None) -> str:
     source = source_arg or config.defaults.source
     if source == "auto":
         return detect_source_ip(config.pfsense.host)
-    return source
+    return validate_source_ip(source)
 
 
 def print_grant_preview(config: Config, payload: dict[str, Any]) -> None:

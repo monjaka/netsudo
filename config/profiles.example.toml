@@ -1,10 +1,12 @@
 [pfsense]
 host = "192.168.3.1"
 user = "admin"
+backend = "ssh"
 helper = "/usr/local/sbin/netsudo-helper.php"
 ssh = "ssh"
 scp = "scp"
 connect_timeout = 8
+batch_mode = true
 # identity_file = "/home/user/.ssh/netsudo_pfsense"
 # known_hosts = "/home/user/.ssh/known_hosts"
 

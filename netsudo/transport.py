@@ -15,12 +15,13 @@ class TransportError(RuntimeError):
 
 
 def ssh_base(config: PfSenseConfig) -> list[str]:
+    ensure_ssh_backend(config)
     cmd = [
         config.ssh,
         "-o",
         f"ConnectTimeout={config.connect_timeout}",
         "-o",
-        "BatchMode=yes",
+        f"BatchMode={'yes' if config.batch_mode else 'no'}",
     ]
     if config.identity_file:
         cmd.extend(["-i", config.identity_file])
@@ -31,12 +32,13 @@ def ssh_base(config: PfSenseConfig) -> list[str]:
 
 
 def scp_base(config: PfSenseConfig) -> list[str]:
+    ensure_ssh_backend(config)
     cmd = [
         config.scp,
         "-o",
         f"ConnectTimeout={config.connect_timeout}",
         "-o",
-        "BatchMode=yes",
+        f"BatchMode={'yes' if config.batch_mode else 'no'}",
     ]
     if config.identity_file:
         cmd.extend(["-i", config.identity_file])
@@ -82,3 +84,12 @@ def copy_file(config: PfSenseConfig, local: Path, remote: str) -> None:
 
 def shell_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
+
+
+def ensure_ssh_backend(config: PfSenseConfig) -> None:
+    if config.backend == "ssh":
+        return
+    raise TransportError(
+        "pfsense.backend=rest is configured, but the REST transport is not implemented yet; "
+        "use backend=\"ssh\" for the current release"
+    )

@@ -27,11 +27,13 @@ class PfSenseConfig:
     host: str
     user: str
     helper: str
+    backend: str = "ssh"
     ssh: str = "ssh"
     scp: str = "scp"
     connect_timeout: int = 8
     identity_file: str | None = None
     known_hosts: str | None = None
+    batch_mode: bool = True
 
 
 @dataclass(frozen=True)
@@ -131,15 +133,20 @@ def _parse_pfsense(raw: dict[str, Any]) -> PfSenseConfig:
     host = _required_str(raw, "host", "pfsense")
     user = str(raw.get("user", "admin"))
     helper = str(raw.get("helper", "/usr/local/sbin/netsudo-helper.php"))
+    backend = str(raw.get("backend", "ssh")).lower()
+    if backend not in {"ssh", "rest"}:
+        raise ValueError("pfsense.backend must be ssh or rest")
     return PfSenseConfig(
         host=host,
         user=user,
         helper=helper,
+        backend=backend,
         ssh=str(raw.get("ssh", "ssh")),
         scp=str(raw.get("scp", "scp")),
         connect_timeout=int(raw.get("connect_timeout", 8)),
         identity_file=_optional_str(raw.get("identity_file")),
         known_hosts=_optional_str(raw.get("known_hosts")),
+        batch_mode=bool(raw.get("batch_mode", True)),
     )
 
 
