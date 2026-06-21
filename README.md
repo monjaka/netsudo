@@ -154,6 +154,15 @@ If you did not restrict the SSH key during setup, you can do it later:
 netsudo-install --config ./netsudo.toml --restrict-key-only
 ```
 
+To uninstall local netsudo config/key files and optionally remove helper files from pfSense:
+
+```bash
+netsudo-install --config ./netsudo.toml --uninstall
+python3 -m pip uninstall netsudo
+```
+
+The uninstall flow prompts before deleting local files or pfSense helper files. It does not remove pfSense aliases/rules from `config.xml`; remove `NETSUDO_*` firewall objects in pfSense if you want a fully clean firewall config.
+
 See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) for operational guidance.
 
 ## Common commands

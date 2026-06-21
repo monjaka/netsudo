@@ -62,6 +62,12 @@ no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,comma
 
 The wrapper allows only the helper actions used for day-to-day grants: `grant`, `status`, `revoke`, and `prune`. A restricted key cannot copy files, run an arbitrary shell, or perform bootstrap/update setup work.
 
+## Uninstall
+
+`netsudo-install --uninstall` can remove the local config/key pair and optionally remove helper files, wrapper files, runtime state, and the matching authorized key entry from pfSense. It prompts before destructive actions by default.
+
+The uninstall command does not currently remove pfSense firewall aliases or rules from `config.xml`; review and remove `NETSUDO_*` aliases/rules from pfSense if you want a completely clean firewall config.
+
 `backend = "rest"` is reserved as an experimental configuration option. The current release uses the SSH helper backend for live pfSense changes because it does not require the unofficial REST API package.
 
 ## Failure behavior

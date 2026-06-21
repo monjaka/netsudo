@@ -45,12 +45,35 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run setup from an existing config without rewriting netsudo.toml",
     )
+    parser.add_argument(
+        "--uninstall",
+        action="store_true",
+        help="remove local netsudo config/key files and optionally pfSense helper files",
+    )
+    parser.add_argument(
+        "--uninstall-local-only",
+        action="store_true",
+        help="during --uninstall, skip pfSense cleanup and only remove local files",
+    )
+    parser.add_argument(
+        "--keep-config",
+        action="store_true",
+        help="during --uninstall, keep the local config file",
+    )
+    parser.add_argument(
+        "--keep-key",
+        action="store_true",
+        help="during --uninstall, keep the local dedicated SSH key pair",
+    )
     args = parser.parse_args(argv)
 
     try:
         config_path = Path(args.config).expanduser()
-        if args.setup_only and args.restrict_key_only:
-            raise RuntimeError("--setup-only and --restrict-key-only cannot be used together")
+        exclusive_modes = sum(bool(value) for value in (args.setup_only, args.restrict_key_only, args.uninstall))
+        if exclusive_modes > 1:
+            raise RuntimeError("--setup-only, --restrict-key-only, and --uninstall cannot be combined")
+        if not args.uninstall and (args.uninstall_local_only or args.keep_config or args.keep_key):
+            raise RuntimeError("--uninstall-local-only, --keep-config, and --keep-key require --uninstall")
         if args.restrict_key_only:
             restrict_key_from_config(config_path)
         elif args.setup_only:
@@ -58,6 +81,14 @@ def main(argv: list[str] | None = None) -> int:
                 config_path,
                 interactive=not args.non_interactive,
                 restrict_key_after_setup=args.restrict_key_after_setup,
+            )
+        elif args.uninstall:
+            uninstall(
+                config_path,
+                interactive=not args.non_interactive,
+                local_only=args.uninstall_local_only,
+                keep_config=args.keep_config,
+                keep_key=args.keep_key,
             )
         else:
             install(
@@ -72,6 +103,84 @@ def main(argv: list[str] | None = None) -> int:
         print(f"netsudo-install: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def uninstall(
+    config_path: Path,
+    *,
+    interactive: bool,
+    local_only: bool,
+    keep_config: bool,
+    keep_key: bool,
+) -> None:
+    config = load_config(str(config_path)) if config_path.exists() else None
+    key_path = Path(config.pfsense.identity_file).expanduser() if config and config.pfsense.identity_file else DEFAULT_KEY
+
+    print("netsudo uninstall")
+    print("This can remove the local config/key and, if requested, remove netsudo helper files from pfSense.")
+
+    if config is not None and not local_only:
+        if confirm("Remove netsudo helper, wrapper, and runtime state from pfSense", False, interactive):
+            uninstall_pfsense(config=config, key_path=key_path)
+    elif config is None and not local_only:
+        print(f"Skipping pfSense cleanup because {config_path} does not exist.")
+
+    if not keep_key and key_pair_exists(key_path):
+        if confirm(f"Delete local dedicated SSH key pair at {key_path}", False, interactive):
+            unlink_if_exists(key_path)
+            unlink_if_exists(Path(str(key_path) + ".pub"))
+            print(f"Deleted local key pair {key_path}")
+
+    if not keep_config and config_path.exists():
+        if confirm(f"Delete local config file {config_path}", False, interactive):
+            unlink_if_exists(config_path)
+            print(f"Deleted {config_path}")
+
+    print("To remove the installed Python package, run: python3 -m pip uninstall netsudo")
+
+
+def uninstall_pfsense(*, config, key_path: Path) -> None:
+    if config.pfsense.backend != "ssh":
+        raise RuntimeError("pfSense uninstall only supports the SSH backend")
+
+    key_blob = None
+    if Path(str(key_path) + ".pub").exists():
+        public_key = read_public_key(key_path)
+        key_blob = public_key.split()[1]
+    remote = build_uninstall_remote_command(helper=config.pfsense.helper, wrapper=DEFAULT_WRAPPER, key_blob=key_blob)
+    print(f"Removing netsudo files from {config.pfsense.user}@{config.pfsense.host}")
+    try:
+        ssh_key = key_path if key_pair_exists(key_path) else None
+        run(ssh_command(host=config.pfsense.host, user=config.pfsense.user, key_path=ssh_key) + [remote])
+    except RuntimeError:
+        if not key_pair_exists(key_path):
+            raise
+        print("Dedicated key cleanup failed; retrying with normal SSH authentication.")
+        print("This may prompt for the pfSense account password.")
+        run(ssh_command(host=config.pfsense.host, user=config.pfsense.user) + [remote])
+    print("Removed pfSense helper files and runtime state.")
+
+
+def build_uninstall_remote_command(*, helper: str, wrapper: str, key_blob: str | None) -> str:
+    remote_parts = [
+        "rm -f " + shell_quote(helper),
+        "rm -f " + shell_quote(wrapper),
+        "rm -f /usr/local/etc/netsudo/policy.json",
+        "rm -f /var/db/netsudo/state.json /var/db/netsudo/state.json.lock",
+    ]
+    if key_blob:
+        awk_script = 'index($0, blob) == 0 { print }'
+        remote_parts.append(
+            "if [ -f ~/.ssh/authorized_keys ]; then "
+            "awk -v blob="
+            + shell_quote(key_blob)
+            + " "
+            + shell_quote(awk_script)
+            + " ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.netsudo && "
+            "mv ~/.ssh/authorized_keys.netsudo ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys; "
+            "fi"
+        )
+    return " && ".join(remote_parts)
 
 
 def setup_from_config(config_path: Path, *, interactive: bool, restrict_key_after_setup: bool | None) -> None:
@@ -186,6 +295,13 @@ def install(config_path: Path, *, interactive: bool, restrict_key_after_setup: b
 
 def key_pair_exists(path: Path) -> bool:
     return path.exists() and Path(str(path) + ".pub").exists()
+
+
+def unlink_if_exists(path: Path) -> None:
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
 
 
 def ensure_ssh_key(path: Path) -> None:

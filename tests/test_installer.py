@@ -1,6 +1,14 @@
+import contextlib
+import io
 import unittest
 
-from netsudo.installer import render_config, restricted_authorized_key_line, restricted_wrapper_script
+from netsudo.installer import (
+    build_uninstall_remote_command,
+    main,
+    render_config,
+    restricted_authorized_key_line,
+    restricted_wrapper_script,
+)
 
 
 class InstallerTests(unittest.TestCase):
@@ -33,6 +41,22 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("exec \"$php\" \"$helper\" grant", wrapper)
         self.assertIn("exec \"$php\" \"$helper\" status", wrapper)
         self.assertNotIn("install-helper", wrapper)
+
+    def test_uninstall_remote_command_removes_helper_and_key(self):
+        command = build_uninstall_remote_command(
+            helper="/usr/local/sbin/netsudo-helper.php",
+            wrapper="/usr/local/sbin/netsudo-ssh-wrapper.sh",
+            key_blob="AAAATESTKEY",
+        )
+
+        self.assertIn("rm -f '/usr/local/sbin/netsudo-helper.php'", command)
+        self.assertIn("rm -f '/usr/local/sbin/netsudo-ssh-wrapper.sh'", command)
+        self.assertIn("authorized_keys", command)
+        self.assertIn("AAAATESTKEY", command)
+
+    def test_keep_flags_require_uninstall(self):
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(main(["--keep-config", "--non-interactive"]), 1)
 
 
 if __name__ == "__main__":
