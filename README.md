@@ -138,6 +138,25 @@ If you later change `netsudo.toml`, apply the updated policy to pfSense again:
 netsudo-install --config ./netsudo.toml --setup-only
 ```
 
+## Troubleshooting
+
+If `netsudo allow` says a destination is outside the profile's allowed destinations, edit that profile in `netsudo.toml` and add the host or CIDR to `destinations`.
+
+For example, to allow Wazuh at `192.168.115.100`, the `admin` profile needs a matching destination scope:
+
+```toml
+[profiles.admin]
+destinations = ["192.168.3.0/24", "192.168.115.0/24"]
+```
+
+Then apply the updated policy to pfSense:
+
+```bash
+netsudo-install --config ./netsudo.toml --setup-only
+```
+
+The profile's `interfaces` must also include the pfSense interface where the source traffic enters. For example, access from `192.168.6.60` needs the interface for that VLAN/source network, not the destination VLAN.
+
 ## Security notes
 
 Use a dedicated pfSense SSH user.

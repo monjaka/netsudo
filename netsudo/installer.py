@@ -470,11 +470,21 @@ audit_log = "~/.local/state/netsudo/audit.log"
 [profiles.admin]
 description = "Short-lived admin access to management services"
 interfaces = ["lan"]
-destinations = ["192.168.3.0/24"]
+destinations = ["192.168.3.0/24", "192.168.9.0/24", "192.168.115.0/24"]
 protocol = "tcp"
-ports = ["22", "443", "8006"]
+ports = ["22", "443", "8006", "9200"]
 max_duration = "30m"
 require_sudo = true
+kill_states = true
+
+[profiles.media]
+description = "Temporary access to media VLAN services"
+interfaces = ["lan"]
+destinations = ["192.168.9.0/24"]
+protocol = "tcp"
+ports = ["80", "443", "8096", "8920"]
+max_duration = "4h"
+require_sudo = false
 kill_states = true
 
 [profiles.all]
