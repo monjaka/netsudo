@@ -239,6 +239,7 @@ function netsudo_apply_state_to_config($policy, $state, $message)
 function netsudo_ensure_policy_objects($policy)
 {
     $changes = array();
+    $active_rules = array();
     foreach ($policy['profiles'] as $name => $profile) {
         $change = netsudo_set_alias(
             $profile['source_alias'],
@@ -272,7 +273,8 @@ function netsudo_ensure_policy_objects($policy)
             }
         }
 
-        foreach ($profile['interfaces'] as $interface) {
+        foreach (netsudo_profile_interfaces($profile, null) as $interface) {
+            $active_rules['netsudo:' . $name . ':' . $interface] = true;
             $change = netsudo_ensure_rule($name, $profile, $interface);
             if ($change !== null) {
                 $changes[] = $change;
@@ -280,6 +282,7 @@ function netsudo_ensure_policy_objects($policy)
         }
     }
 
+    $changes = array_merge($changes, netsudo_remove_stale_profile_rules($active_rules));
     return $changes;
 }
 
@@ -365,7 +368,7 @@ function netsudo_rebuild_scoped_grants($policy, $state)
             $changes[] = $change;
         }
 
-        foreach ($profile['interfaces'] as $interface) {
+        foreach (netsudo_profile_interfaces($profile, (string)$grant['source']) as $interface) {
             $description = 'netsudo-grant:' . $grant['id'] . ':' . $interface;
             $active_rules[$description] = true;
             $change = netsudo_ensure_rule_for_aliases(
@@ -382,6 +385,32 @@ function netsudo_rebuild_scoped_grants($policy, $state)
     }
 
     $changes = array_merge($changes, netsudo_remove_stale_scoped_objects($active_aliases, $active_rules));
+    return $changes;
+}
+
+function netsudo_remove_stale_profile_rules($active_rules)
+{
+    global $config;
+    $changes = array();
+
+    if (!isset($config['filter']) || !is_array($config['filter'])) {
+        $config['filter'] = array();
+    }
+    if (!isset($config['filter']['rule']) || !is_array($config['filter']['rule'])) {
+        $config['filter']['rule'] = array();
+    }
+
+    $rules = array();
+    foreach ($config['filter']['rule'] as $rule) {
+        $description = isset($rule['descr']) ? (string)$rule['descr'] : '';
+        if (strpos($description, 'netsudo:') === 0 && !isset($active_rules[$description])) {
+            $changes[] = 'removed rule ' . $description;
+            continue;
+        }
+        $rules[] = $rule;
+    }
+    $config['filter']['rule'] = $rules;
+
     return $changes;
 }
 
@@ -596,7 +625,7 @@ function netsudo_normalize_policy($policy)
             throw new RuntimeException('profile must be an object: ' . $name);
         }
 
-        $interfaces = netsudo_string_list($profile, 'interfaces');
+        $interfaces = netsudo_policy_interfaces($profile, $name);
         foreach ($interfaces as $interface) {
             if (!preg_match('/^[A-Za-z0-9_]+$/', $interface)) {
                 throw new RuntimeException('invalid interface for profile ' . $name);
@@ -680,6 +709,18 @@ function netsudo_string_list($array, $key)
     return $values;
 }
 
+function netsudo_policy_interfaces($profile, $name)
+{
+    $interfaces = netsudo_optional_string_list($profile, 'interfaces');
+    if ($interfaces === null) {
+        return array('auto');
+    }
+    if (in_array('auto', $interfaces, true) && count($interfaces) > 1) {
+        throw new RuntimeException('profile ' . $name . ': auto interface cannot be combined with explicit interfaces');
+    }
+    return $interfaces;
+}
+
 function netsudo_optional_string_list($array, $key)
 {
     if (!isset($array[$key])) {
@@ -700,6 +741,102 @@ function netsudo_optional_string_list($array, $key)
         $values[] = $value;
     }
     return $values;
+}
+
+function netsudo_profile_interfaces($profile, $source)
+{
+    $interfaces = isset($profile['interfaces']) && is_array($profile['interfaces']) ? $profile['interfaces'] : array('auto');
+    if (!(count($interfaces) === 1 && $interfaces[0] === 'auto')) {
+        return $interfaces;
+    }
+
+    if ($source !== null) {
+        return netsudo_interfaces_for_source($source);
+    }
+
+    if (!isset($profile['sources']) || !is_array($profile['sources']) || count($profile['sources']) === 0) {
+        throw new RuntimeException('auto interfaces require profile sources');
+    }
+    return netsudo_interfaces_for_source_scopes($profile['sources']);
+}
+
+function netsudo_interfaces_for_source($source)
+{
+    $source_net = netsudo_source_network($source);
+    $matches = array();
+    foreach (netsudo_pfsense_interface_networks() as $interface) {
+        if (netsudo_network_contains($interface, $source_net)) {
+            $matches[$interface['name']] = true;
+        }
+    }
+    if (count($matches) === 0) {
+        throw new RuntimeException('could not resolve source interface for ' . $source);
+    }
+    $result = array_keys($matches);
+    sort($result);
+    return $result;
+}
+
+function netsudo_interfaces_for_source_scopes($sources)
+{
+    $matches = array();
+    foreach (netsudo_pfsense_interface_networks() as $interface) {
+        foreach ($sources as $source) {
+            if (netsudo_networks_overlap($interface, netsudo_source_network($source))) {
+                $matches[$interface['name']] = true;
+            }
+        }
+    }
+    if (count($matches) === 0) {
+        throw new RuntimeException('could not resolve any source interfaces from profile sources');
+    }
+    $result = array_keys($matches);
+    sort($result);
+    return $result;
+}
+
+function netsudo_pfsense_interface_networks()
+{
+    global $config;
+    $networks = array();
+    if (!isset($config['interfaces']) || !is_array($config['interfaces'])) {
+        return $networks;
+    }
+
+    foreach ($config['interfaces'] as $name => $interface) {
+        if (!is_array($interface)) {
+            continue;
+        }
+        $ip = isset($interface['ipaddr']) ? (string)$interface['ipaddr'] : '';
+        $subnet = isset($interface['subnet']) ? (int)$interface['subnet'] : -1;
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            continue;
+        }
+        if ($subnet < 0 || $subnet > 32) {
+            continue;
+        }
+        $networks[] = array(
+            'name' => (string)$name,
+            'network' => netsudo_ipv4_to_int($ip) & netsudo_ipv4_mask($subnet),
+            'mask' => $subnet,
+        );
+    }
+    return $networks;
+}
+
+function netsudo_network_contains($container, $candidate)
+{
+    if ($candidate['mask'] < $container['mask']) {
+        return false;
+    }
+    $mask = netsudo_ipv4_mask($container['mask']);
+    return (($candidate['network'] & $mask) === $container['network']);
+}
+
+function netsudo_networks_overlap($left, $right)
+{
+    $mask = netsudo_ipv4_mask(min($left['mask'], $right['mask']));
+    return (($left['network'] & $mask) === ($right['network'] & $mask));
 }
 
 function netsudo_validate_alias($alias)

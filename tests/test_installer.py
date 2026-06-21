@@ -24,6 +24,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('identity_file = "/home/user/.ssh/netsudo_pfsense"', rendered)
         self.assertIn("batch_mode = false", rendered)
         self.assertIn('backend = "ssh"', rendered)
+        self.assertIn('interfaces = ["auto"]', rendered)
         self.assertIn('sources = ["192.168.0.0/16"]', rendered)
         self.assertIn('destinations = ["192.168.0.0/16"]', rendered)
 

@@ -42,6 +42,37 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(policy["profiles"]["admin"]["ports"], ["22", "443"])
         self.assertEqual(policy["profiles"]["admin"]["max_seconds"], 1200)
 
+    def test_defaults_interfaces_to_auto_when_omitted(self):
+        path = self.write_config(
+            """
+            [pfsense]
+            host = "192.168.3.1"
+
+            [profiles.admin]
+            sources = ["192.168.0.0/16"]
+            destinations = ["192.168.0.0/16"]
+            """
+        )
+
+        config = load_config(str(path))
+        self.assertEqual(config.profiles["admin"].interfaces, ("auto",))
+
+    def test_rejects_auto_mixed_with_explicit_interfaces(self):
+        path = self.write_config(
+            """
+            [pfsense]
+            host = "192.168.3.1"
+
+            [profiles.admin]
+            interfaces = ["auto", "opt5"]
+            sources = ["192.168.0.0/16"]
+            destinations = ["192.168.0.0/16"]
+            """
+        )
+
+        with self.assertRaises(ValueError):
+            load_config(str(path))
+
     def test_profile_validates_requested_sources_inside_scope(self):
         path = self.write_config(
             """

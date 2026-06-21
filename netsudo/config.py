@@ -192,7 +192,9 @@ def _parse_profile(name: str, raw: dict[str, Any]) -> Profile:
         raise ValueError(f"profile {name} must be a table")
 
     description = str(raw.get("description", name))
-    interfaces = _required_string_list(raw, "interfaces", name)
+    interfaces = _optional_string_list(raw, "interfaces", name) or ["auto"]
+    if "auto" in interfaces and len(interfaces) > 1:
+        raise ValueError(f"profile {name}: interfaces = ['auto'] cannot be combined with explicit interfaces")
     sources = _optional_string_list(raw, "sources", name)
     for source in sources:
         _validate_source_scope(source, name)

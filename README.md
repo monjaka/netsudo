@@ -79,7 +79,7 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
 
    The installer writes the local config file. The pfSense helper does not configure or edit `netsudo.toml`.
 
-6. Review `netsudo.toml` and edit the profile destinations, interfaces, ports, and durations for your network.
+6. Review `netsudo.toml` and edit the profile sources, destinations, ports, and durations for your network.
 
 7. Apply the config to pfSense:
 
@@ -164,7 +164,7 @@ Then apply config changes to pfSense:
 netsudo-install --config ./netsudo.toml --setup-only
 ```
 
-The profile's `interfaces` are the pfSense ingress interfaces for the source side. For example, access from `192.168.6.60` needs the interface where that source VLAN enters pfSense, not the Wazuh destination VLAN. If many VLANs can be sources, create a pfSense interface group for those VLANs and put that group name in `interfaces`.
+By default, `interfaces = ["auto"]` makes the pfSense helper resolve rule placement from the requested source IP and the firewall's own interface networks. For example, access from `192.168.6.60` resolves to the pfSense interface whose subnet contains `192.168.6.60`. Use explicit interface names only if auto resolution cannot represent a special case.
 
 ## Security notes
 

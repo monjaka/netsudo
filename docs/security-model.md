@@ -52,7 +52,7 @@ This is the intended way to handle many VLANs: configure a broad internal bounda
 
 Destination-scoped grants use temporary grant-specific pfSense aliases and rules. They are removed on revoke or expiry, while profile-wide grants continue to use the profile source alias.
 
-Profile `interfaces` are pfSense ingress interfaces for the source side. If a source such as `192.168.6.60` lives on a client VLAN, the rule must exist on that source VLAN interface or an interface group containing it; it is not enough to create the rule on the destination VLAN.
+With `interfaces = ["auto"]`, the pfSense helper resolves rule placement from the requested source IP and pfSense's configured interface networks. If a source such as `192.168.6.60` lives on a client VLAN, the helper creates the grant rule on the interface whose subnet contains that source. Explicit interface names remain available for unusual routing or VPN cases where subnet-based inference is not enough.
 
 ## Installer bootstrap
 

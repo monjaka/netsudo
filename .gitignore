@@ -9,6 +9,7 @@ dist/
 build/
 *.log
 *.local
+/netsudo.toml
 config/*.toml
 !config/*.example.toml
 state/
