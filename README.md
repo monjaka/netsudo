@@ -99,23 +99,7 @@ python3 -m netsudo.cli --version
 
 ## Quick Start
 
-Create a local config:
-
-```bash
-netsudo init ./netsudo.toml
-```
-
-Or use the installer:
-
-```bash
-netsudo-install --config ./netsudo.toml
-```
-
-Review/edit `netsudo.toml`, then run setup. Setup installs the pfSense helper and creates/updates aliases/rules from the config:
-
-```bash
-netsudo-install --config ./netsudo.toml --setup-only
-```
+After completing the installation steps above, `netsudo.toml` should already exist and the pfSense helper should already be installed.
 
 Grant access:
 
@@ -146,6 +130,12 @@ Revoke:
 
 ```bash
 sudo netsudo revoke last
+```
+
+If you later change `netsudo.toml`, apply the updated policy to pfSense again:
+
+```bash
+netsudo-install --config ./netsudo.toml --setup-only
 ```
 
 ## Security notes
