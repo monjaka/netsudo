@@ -140,7 +140,7 @@ netsudo-install --config ./netsudo.toml --setup-only
 
 ## Security notes
 
-Use a dedicated pfSense SSH user or SSH key for automation. For best results, restrict the SSH key on pfSense to the helper command after setup.
+Use a dedicated pfSense SSH user.
 
 Do not store pfSense admin passwords in `netsudo.toml`. The intended model is local `sudo` plus a dedicated SSH key.
 
