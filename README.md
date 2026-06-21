@@ -38,13 +38,73 @@ The source aliases contain a placeholder IP by default. A grant replaces the ali
 
 When `--destination` is used, `netsudo` creates temporary grant-specific aliases and rules instead of adding the source to the broad profile source alias. That keeps the grant limited to the requested host/CIDR and removes those objects on revoke or expiry.
 
-## Quick start
+## Installation
 
-Install from a checkout:
+### Fedora
+
+1. Install the required system packages:
+
+   ```bash
+   sudo dnf install -y git python3 python3-pip openssh-clients
+   ```
+
+2. Clone the repository:
+
+   ```bash
+   git clone https://github.com/monjaka/netsudo.git
+   cd netsudo
+   ```
+
+   If the repository is private and HTTPS clone fails, use SSH instead:
+
+   ```bash
+   git clone git@github.com:monjaka/netsudo.git
+   cd netsudo
+   ```
+
+3. Install `netsudo` for your user:
+
+   ```bash
+   python3 -m pip install --user .
+   ```
+
+   This command must be run from inside the `netsudo` directory. If you run it from `~`, pip will fail because there is no `pyproject.toml` there.
+
+4. Make sure user-installed Python commands are on your shell path:
+
+   ```bash
+   export PATH="$HOME/.local/bin:$PATH"
+   ```
+
+   To make that permanent for Bash:
+
+   ```bash
+   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+5. Check the install:
+
+   ```bash
+   netsudo --version
+   ```
+
+6. Start the interactive setup:
+
+   ```bash
+   netsudo-install
+   ```
+
+### From A Checkout Without Installing
+
+After cloning:
 
 ```bash
-python3 -m pip install .
+cd netsudo
+python3 scripts/install.py
 ```
+
+## Quick Start
 
 Create a local config:
 
