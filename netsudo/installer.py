@@ -40,12 +40,25 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="only restrict the SSH key from an existing config; helper must already be installed",
     )
+    parser.add_argument(
+        "--setup-only",
+        action="store_true",
+        help="run setup from an existing config without rewriting netsudo.toml",
+    )
     args = parser.parse_args(argv)
 
     try:
         config_path = Path(args.config).expanduser()
+        if args.setup_only and args.restrict_key_only:
+            raise RuntimeError("--setup-only and --restrict-key-only cannot be used together")
         if args.restrict_key_only:
             restrict_key_from_config(config_path)
+        elif args.setup_only:
+            setup_from_config(
+                config_path,
+                interactive=not args.non_interactive,
+                restrict_key_after_setup=args.restrict_key_after_setup,
+            )
         else:
             install(
                 config_path,
@@ -59,6 +72,37 @@ def main(argv: list[str] | None = None) -> int:
         print(f"netsudo-install: {exc}", file=sys.stderr)
         return 1
     return 0
+
+
+def setup_from_config(config_path: Path, *, interactive: bool, restrict_key_after_setup: bool | None) -> None:
+    config = load_config(str(config_path))
+    print(f"Installing pfSense helper and applying policy from {config_path}")
+    print("This reads netsudo.toml, uploads the rendered policy to pfSense, and creates/updates aliases and rules.")
+    run_netsudo(["setup", "--config", str(config_path)])
+
+    if config.pfsense.backend != "ssh":
+        return
+    if not config.pfsense.identity_file:
+        if restrict_key_after_setup:
+            raise RuntimeError("key restriction requires pfsense.identity_file in the config")
+        return
+
+    if restrict_key_after_setup is None:
+        should_restrict = confirm(
+            "Restrict the configured SSH key on pfSense so it can only run the netsudo helper",
+            True if interactive else False,
+            interactive,
+        )
+    else:
+        should_restrict = restrict_key_after_setup
+
+    if should_restrict:
+        restrict_public_key(
+            host=config.pfsense.host,
+            user=config.pfsense.user,
+            key_path=Path(config.pfsense.identity_file).expanduser(),
+            helper=config.pfsense.helper,
+        )
 
 
 def install(config_path: Path, *, interactive: bool, restrict_key_after_setup: bool | None) -> None:
@@ -130,13 +174,13 @@ def install(config_path: Path, *, interactive: bool, restrict_key_after_setup: b
     else:
         print(
             f"Next: review/edit {config_path}, then run "
-            f"`python3 -m netsudo.cli setup --config {config_path}` to install the pfSense helper "
+            f"`netsudo-install --config {config_path} --setup-only` to install the pfSense helper "
             "and apply the policy generated from that config."
         )
         if should_restrict:
             print(
                 "Key restriction was not applied because setup did not run now. "
-                f"After setup succeeds, run `python3 scripts/install.py --config {config_path} --restrict-key-only`."
+                f"After setup succeeds, run `netsudo-install --config {config_path} --restrict-key-only`."
             )
 
 
