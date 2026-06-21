@@ -77,17 +77,17 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
    netsudo-install --config ./netsudo.toml
    ```
 
-   The installer writes the local config file. The pfSense helper does not configure or edit `netsudo.toml`.
+   The installer writes the local config file. If it asks whether to run setup now, answer `no` unless you are ready to apply the generated config to pfSense immediately.
 
 6. Review `netsudo.toml` and edit the profile sources, destinations, ports, and durations for your network.
 
-7. Apply the config to pfSense:
+7. Apply the config to pfSense if you skipped setup in the installer or changed `netsudo.toml` after setup:
 
    ```bash
    netsudo-install --config ./netsudo.toml --setup-only
    ```
 
-   This reads `netsudo.toml`, copies the helper to pfSense, uploads policy rendered from that file, and creates/updates pfSense aliases and rules. It does not edit `netsudo.toml`.
+   This is the same setup action the installer can run for you. It reads `netsudo.toml`, copies the helper to pfSense, uploads policy rendered from that file, and creates/updates pfSense aliases and rules. It does not edit `netsudo.toml`.
 
 ### From A Checkout Without Installing
 

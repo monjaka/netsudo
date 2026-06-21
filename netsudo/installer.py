@@ -276,7 +276,7 @@ def install(config_path: Path, *, interactive: bool, restrict_key_after_setup: b
     elif restrict_key_after_setup:
         raise RuntimeError("key restriction requires an SSH identity_file in the generated config")
 
-    if backend == "ssh" and confirm("Run setup now to install the helper and pfSense aliases/rules", False, interactive):
+    if backend == "ssh" and confirm("Apply this config to pfSense now by running setup", False, interactive):
         run_netsudo(["setup", "--config", str(config_path)])
         if should_restrict and key_path is not None:
             restrict_public_key(host=host, user=user, key_path=key_path, helper="/usr/local/sbin/netsudo-helper.php")
