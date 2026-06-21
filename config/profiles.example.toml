@@ -1,0 +1,46 @@
+[pfsense]
+host = "192.168.3.1"
+user = "admin"
+helper = "/usr/local/sbin/netsudo-helper.php"
+ssh = "ssh"
+scp = "scp"
+connect_timeout = 8
+# identity_file = "/home/user/.ssh/netsudo_pfsense"
+# known_hosts = "/home/user/.ssh/known_hosts"
+
+[defaults]
+duration = "15m"
+reason_required = true
+confirm = true
+source = "auto"
+audit_log = "~/.local/state/netsudo/audit.log"
+
+[profiles.admin]
+description = "Short-lived admin access to management services"
+interfaces = ["lan"]
+destinations = ["192.168.3.0/24", "192.168.9.0/24", "192.168.115.0/24"]
+protocol = "tcp"
+ports = ["22", "443", "8006", "9200"]
+max_duration = "30m"
+require_sudo = true
+kill_states = true
+
+[profiles.media]
+description = "Temporary access to media VLAN services"
+interfaces = ["lan"]
+destinations = ["192.168.9.0/24"]
+protocol = "tcp"
+ports = ["80", "443", "8096", "8920"]
+max_duration = "4h"
+require_sudo = false
+kill_states = true
+
+[profiles.all]
+description = "Emergency broad internal access"
+interfaces = ["lan"]
+destinations = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+protocol = "any"
+ports = "any"
+max_duration = "15m"
+require_sudo = true
+kill_states = true
