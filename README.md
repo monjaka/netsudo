@@ -36,6 +36,8 @@ pfSense is configured once with:
 
 The source aliases contain a placeholder IP by default. A grant replaces the alias contents with the active source IPs for that profile and reloads the pfSense filter. Expiry/revoke removes the IP again.
 
+When `--destination` is used, `netsudo` creates temporary grant-specific aliases and rules instead of adding the source to the broad profile source alias. That keeps the grant limited to the requested host/CIDR and removes those objects on revoke or expiry.
+
 ## Quick start
 
 Install from a checkout:
@@ -76,6 +78,13 @@ Grant access for another device by specifying its source IP:
 sudo netsudo allow admin --source 192.168.6.60 --for 20m --reason "workstation maintenance"
 ```
 
+Grant access to a narrower destination inside the profile scope:
+
+```bash
+sudo netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"
+sudo netsudo allow admin --destination 192.168.9.0/24 --destination 192.168.115.100 --for 30m --reason "maintenance"
+```
+
 Check grants:
 
 ```bash
@@ -105,6 +114,7 @@ netsudo render-policy --config ./netsudo.toml
 netsudo install-helper --config ./netsudo.toml
 netsudo setup --config ./netsudo.toml
 sudo netsudo allow admin --for 20m --reason "maintenance"
+sudo netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "maintenance"
 netsudo status
 sudo netsudo revoke last
 sudo netsudo prune

@@ -78,6 +78,7 @@ function netsudo_cmd_grant($request)
     if ($duration > (int)$profile['max_seconds']) {
         throw new RuntimeException('requested duration exceeds profile maximum');
     }
+    $destinations = netsudo_requested_destinations($request, $profile);
 
     $now = time();
     $grant = array(
@@ -94,6 +95,9 @@ function netsudo_cmd_grant($request)
         'expires_at' => gmdate('c', $now + $duration),
         'expires_at_epoch' => $now + $duration,
     );
+    if ($destinations !== null) {
+        $grant['destinations'] = $destinations;
+    }
 
     $mutation = netsudo_mutate_state(function (&$state) use ($grant, $now) {
         $expired = netsudo_prune_state($state, $now);
@@ -217,6 +221,7 @@ function netsudo_apply_state_to_config($policy, $state, $message)
     $changes = array();
     $changes = array_merge($changes, netsudo_ensure_policy_objects($policy));
     $changes = array_merge($changes, netsudo_rebuild_source_aliases($policy, $state));
+    $changes = array_merge($changes, netsudo_rebuild_scoped_grants($policy, $state));
 
     if (count($changes) > 0) {
         write_config($message);
@@ -284,6 +289,9 @@ function netsudo_rebuild_source_aliases($policy, $state)
             if ((string)$grant['profile'] !== (string)$name) {
                 continue;
             }
+            if (netsudo_grant_has_destinations($grant)) {
+                continue;
+            }
             $sources[(string)$grant['source']] = true;
         }
 
@@ -305,6 +313,137 @@ function netsudo_rebuild_source_aliases($policy, $state)
     }
 
     return $changes;
+}
+
+function netsudo_rebuild_scoped_grants($policy, $state)
+{
+    $changes = array();
+    $active = netsudo_active_grants($state);
+    $active_aliases = array();
+    $active_rules = array();
+
+    foreach ($active as $grant) {
+        if (!netsudo_grant_has_destinations($grant)) {
+            continue;
+        }
+
+        $profile_name = (string)$grant['profile'];
+        if (!isset($policy['profiles'][$profile_name])) {
+            continue;
+        }
+        $profile = $policy['profiles'][$profile_name];
+        if (!netsudo_grant_destinations_allowed($grant, $profile)) {
+            $changes[] = 'skipped scoped grant outside current policy ' . $grant['id'];
+            continue;
+        }
+        $aliases = netsudo_grant_aliases($grant);
+        $active_aliases[$aliases['source']] = true;
+        $active_aliases[$aliases['destination']] = true;
+
+        $change = netsudo_set_alias(
+            $aliases['source'],
+            'host',
+            array((string)$grant['source']),
+            'netsudo scoped source ' . $grant['id']
+        );
+        if ($change !== null) {
+            $changes[] = $change;
+        }
+
+        $change = netsudo_set_alias(
+            $aliases['destination'],
+            'network',
+            $grant['destinations'],
+            'netsudo scoped destination ' . $grant['id']
+        );
+        if ($change !== null) {
+            $changes[] = $change;
+        }
+
+        foreach ($profile['interfaces'] as $interface) {
+            $description = 'netsudo-grant:' . $grant['id'] . ':' . $interface;
+            $active_rules[$description] = true;
+            $change = netsudo_ensure_rule_for_aliases(
+                $description,
+                $profile,
+                $interface,
+                $aliases['source'],
+                $aliases['destination']
+            );
+            if ($change !== null) {
+                $changes[] = $change;
+            }
+        }
+    }
+
+    $changes = array_merge($changes, netsudo_remove_stale_scoped_objects($active_aliases, $active_rules));
+    return $changes;
+}
+
+function netsudo_remove_stale_scoped_objects($active_aliases, $active_rules)
+{
+    global $config;
+    $changes = array();
+    netsudo_ensure_alias_config();
+
+    $aliases = array();
+    foreach ($config['aliases']['alias'] as $alias) {
+        $name = isset($alias['name']) ? (string)$alias['name'] : '';
+        if (preg_match('/^NETSUDO_G_[A-F0-9]{8}_(SRC|DST)$/', $name) && !isset($active_aliases[$name])) {
+            $changes[] = 'removed alias ' . $name;
+            continue;
+        }
+        $aliases[] = $alias;
+    }
+    $config['aliases']['alias'] = $aliases;
+
+    if (!isset($config['filter']) || !is_array($config['filter'])) {
+        $config['filter'] = array();
+    }
+    if (!isset($config['filter']['rule']) || !is_array($config['filter']['rule'])) {
+        $config['filter']['rule'] = array();
+    }
+
+    $rules = array();
+    foreach ($config['filter']['rule'] as $rule) {
+        $description = isset($rule['descr']) ? (string)$rule['descr'] : '';
+        if (strpos($description, 'netsudo-grant:') === 0 && !isset($active_rules[$description])) {
+            $changes[] = 'removed rule ' . $description;
+            continue;
+        }
+        $rules[] = $rule;
+    }
+    $config['filter']['rule'] = $rules;
+
+    return $changes;
+}
+
+function netsudo_grant_has_destinations($grant)
+{
+    return isset($grant['destinations']) && is_array($grant['destinations']) && count($grant['destinations']) > 0;
+}
+
+function netsudo_grant_destinations_allowed($grant, $profile)
+{
+    if (!netsudo_grant_has_destinations($grant)) {
+        return true;
+    }
+    foreach ($grant['destinations'] as $destination) {
+        if (!netsudo_destination_allowed($destination, $profile['destinations'])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function netsudo_grant_aliases($grant)
+{
+    $id = strtoupper((string)$grant['id']);
+    $id = preg_replace('/[^A-Z0-9_]/', '_', $id);
+    return array(
+        'source' => 'NETSUDO_' . $id . '_SRC',
+        'destination' => 'NETSUDO_' . $id . '_DST',
+    );
 }
 
 function netsudo_set_alias($name, $type, $items, $description)
@@ -340,6 +479,17 @@ function netsudo_set_alias($name, $type, $items, $description)
 
 function netsudo_ensure_rule($profile_name, $profile, $interface)
 {
+    return netsudo_ensure_rule_for_aliases(
+        'netsudo:' . $profile_name . ':' . $interface,
+        $profile,
+        $interface,
+        $profile['source_alias'],
+        $profile['destination_alias']
+    );
+}
+
+function netsudo_ensure_rule_for_aliases($description, $profile, $interface, $source_alias, $destination_alias)
+{
     global $config;
     if (!isset($config['filter']) || !is_array($config['filter'])) {
         $config['filter'] = array();
@@ -349,8 +499,7 @@ function netsudo_ensure_rule($profile_name, $profile, $interface)
     }
 
     $now = (string)time();
-    $description = 'netsudo:' . $profile_name . ':' . $interface;
-    $destination = array('address' => $profile['destination_alias']);
+    $destination = array('address' => $destination_alias);
     if ($profile['ports'] !== 'any') {
         $destination['port'] = $profile['port_alias'];
     }
@@ -361,7 +510,7 @@ function netsudo_ensure_rule($profile_name, $profile, $interface)
         'ipprotocol' => 'inet',
         'statetype' => 'keep state',
         'protocol' => $profile['protocol'],
-        'source' => array('address' => $profile['source_alias']),
+        'source' => array('address' => $source_alias),
         'destination' => $destination,
         'descr' => $description,
     );
@@ -537,12 +686,40 @@ function netsudo_validate_source($source)
 
 function netsudo_validate_destination($destination)
 {
+    netsudo_normalize_destination($destination);
+}
+
+function netsudo_requested_destinations($request, $profile)
+{
+    if (!isset($request['destinations']) || $request['destinations'] === null) {
+        return null;
+    }
+    if (!is_array($request['destinations']) || count($request['destinations']) === 0) {
+        throw new RuntimeException('destinations must be a non-empty list');
+    }
+
+    $destinations = array();
+    foreach ($request['destinations'] as $destination) {
+        $destination = netsudo_normalize_destination($destination);
+        if (!netsudo_destination_allowed($destination, $profile['destinations'])) {
+            throw new RuntimeException('destination is outside profile scope: ' . $destination);
+        }
+        $destinations[$destination] = true;
+    }
+
+    $result = array_keys($destinations);
+    sort($result);
+    return $result;
+}
+
+function netsudo_normalize_destination($destination)
+{
     $destination = trim((string)$destination);
     if (strpos($destination, '/') === false) {
         if (filter_var($destination, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new RuntimeException('invalid destination: ' . $destination);
         }
-        return;
+        return $destination;
     }
 
     $parts = explode('/', $destination, 2);
@@ -556,6 +733,61 @@ function netsudo_validate_destination($destination)
     if ($mask < 0 || $mask > 32) {
         throw new RuntimeException('invalid destination mask: ' . $destination);
     }
+    $network = netsudo_ipv4_to_int($parts[0]) & netsudo_ipv4_mask($mask);
+    return long2ip($network) . '/' . $mask;
+}
+
+function netsudo_destination_allowed($destination, $allowed_destinations)
+{
+    $requested = netsudo_destination_network($destination);
+    foreach ($allowed_destinations as $allowed_destination) {
+        $allowed = netsudo_destination_network($allowed_destination);
+        if ($requested['mask'] < $allowed['mask']) {
+            continue;
+        }
+        $mask = netsudo_ipv4_mask($allowed['mask']);
+        if (($requested['network'] & $mask) === $allowed['network']) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function netsudo_destination_network($destination)
+{
+    $destination = netsudo_normalize_destination($destination);
+    if (strpos($destination, '/') === false) {
+        return array(
+            'network' => netsudo_ipv4_to_int($destination),
+            'mask' => 32,
+        );
+    }
+
+    $parts = explode('/', $destination, 2);
+    $mask = (int)$parts[1];
+    return array(
+        'network' => netsudo_ipv4_to_int($parts[0]) & netsudo_ipv4_mask($mask),
+        'mask' => $mask,
+    );
+}
+
+function netsudo_ipv4_to_int($ip)
+{
+    $packed = inet_pton($ip);
+    if ($packed === false) {
+        throw new RuntimeException('invalid IPv4 address: ' . $ip);
+    }
+    $unpacked = unpack('N', $packed);
+    return (int)$unpacked[1];
+}
+
+function netsudo_ipv4_mask($bits)
+{
+    $bits = (int)$bits;
+    if ($bits === 0) {
+        return 0;
+    }
+    return (0xffffffff << (32 - $bits)) & 0xffffffff;
 }
 
 function netsudo_validate_port($port)

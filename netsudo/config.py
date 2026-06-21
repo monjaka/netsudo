@@ -60,6 +60,19 @@ class Profile:
     destination_alias: str
     port_alias: str | None
 
+    def validate_destinations(self, requested: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+        """Return normalized requested destinations if they fit inside this profile."""
+        if not requested:
+            raise ValueError("at least one destination is required")
+        normalized = tuple(dict.fromkeys(normalize_destination(value) for value in requested))
+        for destination in normalized:
+            if not destination_allowed(destination, self.destinations):
+                raise ValueError(
+                    f"destination {destination} is outside profile {self.name} allowed destinations: "
+                    f"{', '.join(self.destinations)}"
+                )
+        return normalized
+
 
 @dataclass(frozen=True)
 class Config:
@@ -263,3 +276,34 @@ def _alias(value: Any, default: str) -> str:
 
 def _alias_slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", name).upper()
+
+
+def normalize_destination(value: str) -> str:
+    """Validate and normalize a destination host or CIDR network."""
+    raw = str(value).strip()
+    if not raw:
+        raise ValueError("destination must not be empty")
+    try:
+        if "/" in raw:
+            return str(ipaddress.ip_network(raw, strict=False))
+        return str(ipaddress.ip_address(raw))
+    except ValueError as exc:
+        raise ValueError(f"invalid destination: {value}") from exc
+
+
+def destination_allowed(destination: str, allowed_destinations: tuple[str, ...] | list[str]) -> bool:
+    requested = _destination_network(destination)
+    for allowed in allowed_destinations:
+        allowed_network = _destination_network(allowed)
+        if requested.version != allowed_network.version:
+            continue
+        if requested.subnet_of(allowed_network):
+            return True
+    return False
+
+
+def _destination_network(value: str) -> Any:
+    raw = normalize_destination(value)
+    if "/" in raw:
+        return ipaddress.ip_network(raw, strict=False)
+    return ipaddress.ip_network(raw + "/32", strict=False)

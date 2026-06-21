@@ -60,6 +60,14 @@ def build_parser() -> argparse.ArgumentParser:
     allow_p.add_argument("profile")
     allow_p.add_argument("--for", dest="duration", default=None, help="duration such as 15m or 1h")
     allow_p.add_argument("--source", default=None, help="source IPv4 to grant; default auto-detects this host")
+    allow_p.add_argument(
+        "--destination",
+        "--dest",
+        dest="destinations",
+        action="append",
+        default=None,
+        help="destination host/CIDR to grant; repeat for multiple; default uses the full profile scope",
+    )
     allow_p.add_argument("--reason", default="", help="audit reason")
     allow_p.add_argument("-y", "--yes", action="store_true", help="skip confirmation prompt")
     allow_p.add_argument("--no-sudo-check", action="store_true", help="do not require local root for privileged profiles")
@@ -144,6 +152,7 @@ def cmd_allow(args: argparse.Namespace) -> int:
         raise ValueError("--reason is required by config")
 
     source = resolve_source(config, args.source)
+    destinations = profile.validate_destinations(args.destinations) if args.destinations else None
     payload = {
         "profile": profile.name,
         "source": source,
@@ -153,6 +162,8 @@ def cmd_allow(args: argparse.Namespace) -> int:
         "request_host": socket.gethostname(),
         "client_platform": platform.platform(),
     }
+    if destinations:
+        payload["destinations"] = list(destinations)
 
     if config.defaults.confirm and not args.yes:
         print_grant_preview(config, payload)
@@ -166,6 +177,8 @@ def cmd_allow(args: argparse.Namespace) -> int:
     write_audit(config.defaults.audit_log, "grant", grant)
     print(f"Granted {grant['id']}")
     print(f"Source: {grant['source']}")
+    if grant.get("destinations"):
+        print(f"Destinations: {', '.join(grant['destinations'])}")
     print(f"Profile: {grant['profile']}")
     print(f"Expires: {grant['expires_at']}")
     return 0
@@ -184,8 +197,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         return 0
     for grant in grants:
         expires_in = max(0, int(grant.get("expires_at_epoch", 0)) - int(time.time()))
+        destinations = grant.get("destinations")
+        destination_text = f" -> {','.join(destinations)}" if destinations else ""
         print(
-            f"{grant['id']}  {grant['profile']}  {grant['source']}  "
+            f"{grant['id']}  {grant['profile']}  {grant['source']}{destination_text}  "
             f"expires in {format_duration(expires_in)}  reason={grant.get('reason', '')}"
         )
     return 0
@@ -244,7 +259,8 @@ def print_grant_preview(config: Config, payload: dict[str, Any]) -> None:
     print(f"  Source:       {payload['source']}")
     print(f"  Profile:      {profile.name}")
     print(f"  Description:  {profile.description}")
-    print(f"  Destinations: {', '.join(profile.destinations)}")
+    destinations = payload.get("destinations") or list(profile.destinations)
+    print(f"  Destinations: {', '.join(destinations)}")
     print(f"  Protocol:     {profile.protocol}")
     print(f"  Ports:        {profile.ports if profile.ports == 'any' else ', '.join(profile.ports)}")
     print(f"  Duration:     {format_duration(payload['duration_seconds'])}")

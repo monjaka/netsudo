@@ -40,6 +40,14 @@ The helper validates that request against `/usr/local/etc/netsudo/policy.json` o
 
 That power should stay behind `require_sudo = true` for sensitive profiles. The firewall-side helper still enforces the profile's destinations, ports, and maximum duration.
 
+## Granting a narrower destination
+
+`netsudo allow PROFILE --destination 192.168.115.100` limits the grant to a requested host or CIDR inside that profile's configured destination list. Repeat `--destination` for multiple requested destinations.
+
+The requested destination must be equal to or narrower than a configured profile destination. For example, a profile allowing `192.168.115.0/24` can grant `192.168.115.100`, but it cannot grant `192.168.116.100`.
+
+Destination-scoped grants use temporary grant-specific pfSense aliases and rules. They are removed on revoke or expiry, while profile-wide grants continue to use the profile source alias.
+
 ## Installer bootstrap
 
 `netsudo-install` can generate an Ed25519 key and install its public key on pfSense. The password prompt, if needed, is handled by `ssh` or `ssh-copy-id`; the password is not written to config.

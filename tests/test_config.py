@@ -4,7 +4,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from netsudo.config import load_config
+from netsudo.config import destination_allowed, load_config, normalize_destination
 
 
 class ConfigTests(unittest.TestCase):
@@ -39,6 +39,33 @@ class ConfigTests(unittest.TestCase):
         policy = json.loads(config.policy_json())
         self.assertEqual(policy["profiles"]["admin"]["ports"], ["22", "443"])
         self.assertEqual(policy["profiles"]["admin"]["max_seconds"], 1200)
+
+    def test_profile_validates_requested_destinations_inside_scope(self):
+        path = self.write_config(
+            """
+            [pfsense]
+            host = "192.168.3.1"
+
+            [profiles.admin]
+            interfaces = ["lan"]
+            destinations = ["192.168.3.0/24", "192.168.9.10"]
+            """
+        )
+
+        profile = load_config(str(path)).profiles["admin"]
+        self.assertEqual(
+            profile.validate_destinations(["192.168.3.25", "192.168.9.10"]),
+            ("192.168.3.25", "192.168.9.10"),
+        )
+
+        with self.assertRaises(ValueError):
+            profile.validate_destinations(["192.168.4.10"])
+
+    def test_destination_helpers_normalize_and_check_containment(self):
+        self.assertEqual(normalize_destination("192.168.3.5/24"), "192.168.3.0/24")
+        self.assertTrue(destination_allowed("192.168.3.25", ["192.168.3.0/24"]))
+        self.assertTrue(destination_allowed("192.168.3.128/25", ["192.168.3.0/24"]))
+        self.assertFalse(destination_allowed("192.168.4.0/24", ["192.168.3.0/24"]))
 
     def test_rejects_invalid_destination(self):
         path = self.write_config(
