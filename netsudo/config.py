@@ -50,6 +50,7 @@ class Profile:
     name: str
     description: str
     interfaces: tuple[str, ...]
+    sources: tuple[str, ...]
     destinations: tuple[str, ...]
     protocol: str
     ports: tuple[str, ...] | str
@@ -73,6 +74,16 @@ class Profile:
                 )
         return normalized
 
+    def validate_source(self, source: str) -> str:
+        """Return a normalized source IP if it fits inside this profile."""
+        normalized = normalize_source(source)
+        if self.sources and not source_allowed(normalized, self.sources):
+            raise ValueError(
+                f"source {normalized} is outside profile {self.name} allowed sources: "
+                f"{', '.join(self.sources)}"
+            )
+        return normalized
+
 
 @dataclass(frozen=True)
 class Config:
@@ -88,6 +99,7 @@ class Config:
                 name: {
                     "description": profile.description,
                     "interfaces": list(profile.interfaces),
+                    "sources": list(profile.sources),
                     "destinations": list(profile.destinations),
                     "protocol": profile.protocol,
                     "ports": profile.ports if profile.ports == "any" else list(profile.ports),
@@ -181,6 +193,9 @@ def _parse_profile(name: str, raw: dict[str, Any]) -> Profile:
 
     description = str(raw.get("description", name))
     interfaces = _required_string_list(raw, "interfaces", name)
+    sources = _optional_string_list(raw, "sources", name)
+    for source in sources:
+        _validate_source_scope(source, name)
     destinations = _required_string_list(raw, "destinations", name)
     for destination in destinations:
         _validate_destination(destination, name)
@@ -209,6 +224,7 @@ def _parse_profile(name: str, raw: dict[str, Any]) -> Profile:
         name=name,
         description=description,
         interfaces=tuple(interfaces),
+        sources=tuple(normalize_source_scope(source) for source in sources),
         destinations=tuple(destinations),
         protocol=protocol,
         ports=ports,
@@ -238,11 +254,30 @@ def _required_string_list(raw: dict[str, Any], key: str, profile: str) -> list[s
     return result
 
 
+def _optional_string_list(raw: dict[str, Any], key: str, profile: str) -> list[str]:
+    if key not in raw:
+        return []
+    value = raw[key]
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"profile {profile}: {key} must be a non-empty list when set")
+    result = [str(item).strip() for item in value]
+    if any(not item for item in result):
+        raise ValueError(f"profile {profile}: {key} contains an empty value")
+    return result
+
+
 def _optional_str(value: Any) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _validate_source_scope(value: str, profile: str) -> None:
+    try:
+        normalize_source_scope(value)
+    except ValueError as exc:
+        raise ValueError(f"profile {profile}: invalid source {value}") from exc
 
 
 def _validate_destination(value: str, profile: str) -> None:
@@ -276,6 +311,44 @@ def _alias(value: Any, default: str) -> str:
 
 def _alias_slug(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_]", "_", name).upper()
+
+
+def normalize_source(value: str) -> str:
+    """Validate and normalize a source IPv4 address."""
+    try:
+        return str(ipaddress.IPv4Address(str(value).strip()))
+    except ValueError as exc:
+        raise ValueError(f"source must be an IPv4 address: {value}") from exc
+
+
+def normalize_source_scope(value: str) -> str:
+    """Validate and normalize a source IPv4 host or CIDR network."""
+    raw = str(value).strip()
+    if not raw:
+        raise ValueError("source must not be empty")
+    try:
+        if "/" in raw:
+            network = ipaddress.ip_network(raw, strict=False)
+            if network.version != 4:
+                raise ValueError
+            return str(network)
+        return str(ipaddress.IPv4Address(raw))
+    except ValueError as exc:
+        raise ValueError(f"invalid source: {value}") from exc
+
+
+def source_allowed(source: str, allowed_sources: tuple[str, ...] | list[str]) -> bool:
+    if not allowed_sources:
+        return True
+    requested = _source_network(source)
+    return any(requested.subnet_of(_source_network(allowed)) for allowed in allowed_sources)
+
+
+def _source_network(value: str) -> Any:
+    raw = normalize_source_scope(value)
+    if "/" in raw:
+        return ipaddress.ip_network(raw, strict=False)
+    return ipaddress.ip_network(raw + "/32", strict=False)
 
 
 def normalize_destination(value: str) -> str:

@@ -157,7 +157,7 @@ def cmd_allow(args: argparse.Namespace) -> int:
     if config.defaults.reason_required and not args.reason.strip():
         raise ValueError("--reason is required by config")
 
-    source = resolve_source(config, args.source)
+    source = profile.validate_source(resolve_source(config, args.source))
     destinations = profile.validate_destinations(args.destinations) if args.destinations else None
     payload = {
         "profile": profile.name,

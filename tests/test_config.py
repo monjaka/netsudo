@@ -4,7 +4,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from netsudo.config import destination_allowed, load_config, normalize_destination
+from netsudo.config import destination_allowed, load_config, normalize_destination, normalize_source_scope, source_allowed
 
 
 class ConfigTests(unittest.TestCase):
@@ -34,11 +34,33 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.pfsense.user, "admin")
         self.assertEqual(config.pfsense.backend, "ssh")
         self.assertTrue(config.pfsense.batch_mode)
+        self.assertEqual(config.profiles["admin"].sources, ())
         self.assertEqual(config.profiles["admin"].source_alias, "NETSUDO_ADMIN_SRC")
 
         policy = json.loads(config.policy_json())
+        self.assertEqual(policy["profiles"]["admin"]["sources"], [])
         self.assertEqual(policy["profiles"]["admin"]["ports"], ["22", "443"])
         self.assertEqual(policy["profiles"]["admin"]["max_seconds"], 1200)
+
+    def test_profile_validates_requested_sources_inside_scope(self):
+        path = self.write_config(
+            """
+            [pfsense]
+            host = "192.168.3.1"
+
+            [profiles.admin]
+            interfaces = ["lan"]
+            sources = ["192.168.6.0/24", "192.168.10.50"]
+            destinations = ["192.168.0.0/16"]
+            """
+        )
+
+        profile = load_config(str(path)).profiles["admin"]
+        self.assertEqual(profile.validate_source("192.168.6.60"), "192.168.6.60")
+        self.assertEqual(profile.validate_source("192.168.10.50"), "192.168.10.50")
+
+        with self.assertRaises(ValueError):
+            profile.validate_source("192.168.7.60")
 
     def test_profile_validates_requested_destinations_inside_scope(self):
         path = self.write_config(
@@ -66,6 +88,11 @@ class ConfigTests(unittest.TestCase):
         self.assertTrue(destination_allowed("192.168.3.25", ["192.168.3.0/24"]))
         self.assertTrue(destination_allowed("192.168.3.128/25", ["192.168.3.0/24"]))
         self.assertFalse(destination_allowed("192.168.4.0/24", ["192.168.3.0/24"]))
+
+    def test_source_helpers_normalize_and_check_containment(self):
+        self.assertEqual(normalize_source_scope("192.168.6.5/24"), "192.168.6.0/24")
+        self.assertTrue(source_allowed("192.168.6.60", ["192.168.6.0/24"]))
+        self.assertFalse(source_allowed("192.168.7.60", ["192.168.6.0/24"]))
 
     def test_rejects_invalid_destination(self):
         path = self.write_config(

@@ -471,6 +471,8 @@ audit_log = "~/.local/state/netsudo/audit.log"
 description = "Short-lived admin access to management services"
 # pfSense ingress interface or interface group for the source side.
 interfaces = ["lan"]
+# Broad source scope. Use --source at runtime to select one host.
+sources = ["192.168.0.0/16"]
 # Broad internal scope. Use --destination at runtime to narrow each grant.
 destinations = ["192.168.0.0/16"]
 protocol = "tcp"
@@ -483,6 +485,7 @@ kill_states = true
 description = "Temporary access to media VLAN services"
 # pfSense ingress interface or interface group for the source side.
 interfaces = ["lan"]
+sources = ["192.168.0.0/16"]
 destinations = ["192.168.9.0/24"]
 protocol = "tcp"
 ports = ["80", "443", "8096", "8920"]
@@ -494,6 +497,7 @@ kill_states = true
 description = "Emergency broad internal access"
 # pfSense ingress interface or interface group for the source side.
 interfaces = ["lan"]
+sources = ["192.168.0.0/16"]
 destinations = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 protocol = "any"
 ports = "any"

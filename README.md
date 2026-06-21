@@ -36,6 +36,8 @@ pfSense is configured once with:
 
 The source aliases contain a placeholder IP by default. A grant replaces the alias contents with the active source IPs for that profile and reloads the pfSense filter. Expiry/revoke removes the IP again.
 
+When `--source` is used, `netsudo` dynamically grants that source IP for the request window. Profiles can set `sources` to limit which source IPs are allowed.
+
 When `--destination` is used, `netsudo` creates temporary grant-specific aliases and rules instead of adding the source to the broad profile source alias. That keeps the grant limited to the requested host/CIDR and removes those objects on revoke or expiry.
 
 ## Installation
@@ -146,10 +148,11 @@ You do not need to list every VLAN. Use a broader internal CIDR, then keep each 
 
 ```toml
 [profiles.admin]
+sources = ["192.168.0.0/16"]
 destinations = ["192.168.0.0/16"]
 ```
 
-With that scope, this grant is accepted because `192.168.115.100` is inside `192.168.0.0/16`:
+With that scope, this grant is accepted because both `192.168.6.60` and `192.168.115.100` are inside the configured boundaries:
 
 ```bash
 netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"

@@ -38,7 +38,9 @@ The helper validates that request against `/usr/local/etc/netsudo/policy.json` o
 
 `netsudo allow PROFILE --source 192.168.6.60` grants access for that specified IPv4 source instead of auto-detecting the client host. This is useful from an admin workstation that needs to temporarily open access for a laptop, VM, or container.
 
-That power should stay behind `require_sudo = true` for sensitive profiles. The firewall-side helper still enforces the profile's destinations, ports, and maximum duration.
+That power should stay behind `require_sudo = true` for sensitive profiles. If a profile defines `sources`, both the local CLI and the firewall-side helper reject source IPs outside that scope. The helper also enforces destinations, ports, and maximum duration.
+
+This mirrors destination scoping: configure a broad source boundary once, such as `192.168.0.0/16`, then use `--source` to dynamically select one host for each grant.
 
 ## Granting a narrower destination
 

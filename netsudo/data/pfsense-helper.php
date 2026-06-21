@@ -74,6 +74,11 @@ function netsudo_cmd_grant($request)
 
     $profile = $policy['profiles'][$profile_name];
     $source = netsudo_validate_source(netsudo_required_string($request, 'source'));
+    if (isset($profile['sources']) && is_array($profile['sources']) && count($profile['sources']) > 0) {
+        if (!netsudo_source_allowed($source, $profile['sources'])) {
+            throw new RuntimeException('source is outside profile scope: ' . $source);
+        }
+    }
     $duration = netsudo_required_positive_int($request, 'duration_seconds');
     if ($duration > (int)$profile['max_seconds']) {
         throw new RuntimeException('requested duration exceeds profile maximum');
@@ -598,6 +603,13 @@ function netsudo_normalize_policy($policy)
             }
         }
 
+        $sources = netsudo_optional_string_list($profile, 'sources');
+        if ($sources !== null) {
+            foreach ($sources as $source) {
+                netsudo_validate_source_scope($source);
+            }
+        }
+
         $destinations = netsudo_string_list($profile, 'destinations');
         foreach ($destinations as $destination) {
             netsudo_validate_destination($destination);
@@ -633,6 +645,7 @@ function netsudo_normalize_policy($policy)
         $clean['profiles'][$name] = array(
             'description' => isset($profile['description']) ? (string)$profile['description'] : $name,
             'interfaces' => $interfaces,
+            'sources' => $sources === null ? array() : $sources,
             'destinations' => $destinations,
             'protocol' => $protocol,
             'ports' => $clean_ports,
@@ -667,6 +680,28 @@ function netsudo_string_list($array, $key)
     return $values;
 }
 
+function netsudo_optional_string_list($array, $key)
+{
+    if (!isset($array[$key])) {
+        return null;
+    }
+    if (!is_array($array[$key])) {
+        throw new RuntimeException($key . ' must be a list');
+    }
+    if (count($array[$key]) === 0) {
+        return null;
+    }
+    $values = array();
+    foreach ($array[$key] as $value) {
+        $value = trim((string)$value);
+        if ($value === '') {
+            throw new RuntimeException($key . ' contains an empty value');
+        }
+        $values[] = $value;
+    }
+    return $values;
+}
+
 function netsudo_validate_alias($alias)
 {
     if (!preg_match('/^[A-Za-z][A-Za-z0-9_]{0,30}$/', $alias)) {
@@ -682,6 +717,70 @@ function netsudo_validate_source($source)
         throw new RuntimeException('source must be an IPv4 address');
     }
     return $source;
+}
+
+function netsudo_validate_source_scope($source)
+{
+    netsudo_normalize_source_scope($source);
+}
+
+function netsudo_normalize_source_scope($source)
+{
+    $source = trim((string)$source);
+    if (strpos($source, '/') === false) {
+        if (filter_var($source, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new RuntimeException('invalid source: ' . $source);
+        }
+        return $source;
+    }
+
+    $parts = explode('/', $source, 2);
+    if (count($parts) !== 2 || filter_var($parts[0], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+        throw new RuntimeException('invalid source: ' . $source);
+    }
+    if (!ctype_digit($parts[1])) {
+        throw new RuntimeException('invalid source mask: ' . $source);
+    }
+    $mask = (int)$parts[1];
+    if ($mask < 0 || $mask > 32) {
+        throw new RuntimeException('invalid source mask: ' . $source);
+    }
+    $network = netsudo_ipv4_to_int($parts[0]) & netsudo_ipv4_mask($mask);
+    return long2ip($network) . '/' . $mask;
+}
+
+function netsudo_source_allowed($source, $allowed_sources)
+{
+    $requested = netsudo_source_network($source);
+    foreach ($allowed_sources as $allowed_source) {
+        $allowed = netsudo_source_network($allowed_source);
+        if ($requested['mask'] < $allowed['mask']) {
+            continue;
+        }
+        $mask = netsudo_ipv4_mask($allowed['mask']);
+        if (($requested['network'] & $mask) === $allowed['network']) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function netsudo_source_network($source)
+{
+    $source = netsudo_normalize_source_scope($source);
+    if (strpos($source, '/') === false) {
+        return array(
+            'network' => netsudo_ipv4_to_int($source),
+            'mask' => 32,
+        );
+    }
+
+    $parts = explode('/', $source, 2);
+    $mask = (int)$parts[1];
+    return array(
+        'network' => netsudo_ipv4_to_int($parts[0]) & netsudo_ipv4_mask($mask),
+        'mask' => $mask,
+    );
 }
 
 function netsudo_validate_destination($destination)
