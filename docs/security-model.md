@@ -44,9 +44,13 @@ That power should stay behind `require_sudo = true` for sensitive profiles. The 
 
 `netsudo allow PROFILE --destination 192.168.115.100` limits the grant to a requested host or CIDR inside that profile's configured destination list. Repeat `--destination` for multiple requested destinations.
 
-The requested destination must be equal to or narrower than a configured profile destination. For example, a profile allowing `192.168.115.0/24` can grant `192.168.115.100`, but it cannot grant `192.168.116.100`.
+The requested destination must be equal to or narrower than a configured profile destination. For example, a profile allowing `192.168.0.0/16` can grant `192.168.115.100`, but it cannot grant a public internet destination.
+
+This is the intended way to handle many VLANs: configure a broad internal boundary once, then use `--destination` to dynamically narrow each individual grant.
 
 Destination-scoped grants use temporary grant-specific pfSense aliases and rules. They are removed on revoke or expiry, while profile-wide grants continue to use the profile source alias.
+
+Profile `interfaces` are pfSense ingress interfaces for the source side. If a source such as `192.168.6.60` lives on a client VLAN, the rule must exist on that source VLAN interface or an interface group containing it; it is not enough to create the rule on the destination VLAN.
 
 ## Installer bootstrap
 

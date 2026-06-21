@@ -140,22 +140,28 @@ netsudo-install --config ./netsudo.toml --setup-only
 
 ## Troubleshooting
 
-If `netsudo allow` says a destination is outside the profile's allowed destinations, edit that profile in `netsudo.toml` and add the host or CIDR to `destinations`.
+If `netsudo allow` says a destination is outside the profile's allowed destinations, edit that profile in `netsudo.toml` and widen `destinations` to the boundary you are willing to delegate to that profile.
 
-For example, to allow Wazuh at `192.168.115.100`, the `admin` profile needs a matching destination scope:
+You do not need to list every VLAN. Use a broader internal CIDR, then keep each grant narrow with `--destination`:
 
 ```toml
 [profiles.admin]
-destinations = ["192.168.3.0/24", "192.168.115.0/24"]
+destinations = ["192.168.0.0/16"]
 ```
 
-Then apply the updated policy to pfSense:
+With that scope, this grant is accepted because `192.168.115.100` is inside `192.168.0.0/16`:
+
+```bash
+netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"
+```
+
+Then apply config changes to pfSense:
 
 ```bash
 netsudo-install --config ./netsudo.toml --setup-only
 ```
 
-The profile's `interfaces` must also include the pfSense interface where the source traffic enters. For example, access from `192.168.6.60` needs the interface for that VLAN/source network, not the destination VLAN.
+The profile's `interfaces` are the pfSense ingress interfaces for the source side. For example, access from `192.168.6.60` needs the interface where that source VLAN enters pfSense, not the Wazuh destination VLAN. If many VLANs can be sources, create a pfSense interface group for those VLANs and put that group name in `interfaces`.
 
 ## Security notes
 

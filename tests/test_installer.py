@@ -24,6 +24,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('identity_file = "/home/user/.ssh/netsudo_pfsense"', rendered)
         self.assertIn("batch_mode = false", rendered)
         self.assertIn('backend = "ssh"', rendered)
+        self.assertIn('destinations = ["192.168.0.0/16"]', rendered)
 
     def test_restricted_authorized_key_line_forces_wrapper(self):
         public_key = "ssh-ed25519 AAAATESTKEY netsudo-pfsense"
