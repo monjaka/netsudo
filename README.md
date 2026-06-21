@@ -16,11 +16,11 @@ It is designed for segmented homelabs and small labs where firewall policy shoul
 ## Example
 
 ```bash
-sudo netsudo allow admin --for 20m --reason "fix Wazuh agent"
-sudo netsudo allow service-jellyfin --for 2h
-sudo netsudo status
-sudo netsudo revoke last
-sudo netsudo revoke all
+netsudo allow admin --for 20m --reason "fix Wazuh agent"
+netsudo allow service-jellyfin --for 2h
+netsudo status
+netsudo revoke last
+netsudo revoke all
 ```
 
 `allow all` does not disable the firewall. It means "allow this source IP to the destinations and ports defined by the `all` profile, for a limited time."
@@ -104,20 +104,20 @@ After completing the installation steps above, `netsudo.toml` should already exi
 Grant access:
 
 ```bash
-sudo netsudo allow admin --for 20m --reason "maintenance"
+netsudo allow admin --for 20m --reason "maintenance"
 ```
 
 Grant access for another device by specifying its source IP:
 
 ```bash
-sudo netsudo allow admin --source 192.168.6.60 --for 20m --reason "workstation maintenance"
+netsudo allow admin --source 192.168.6.60 --for 20m --reason "workstation maintenance"
 ```
 
 Grant access to a narrower destination inside the profile scope:
 
 ```bash
-sudo netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"
-sudo netsudo allow admin --destination 192.168.9.0/24 --destination 192.168.115.100 --for 30m --reason "maintenance"
+netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"
+netsudo allow admin --destination 192.168.9.0/24 --destination 192.168.115.100 --for 30m --reason "maintenance"
 ```
 
 Check grants:
@@ -129,7 +129,7 @@ netsudo status
 Revoke:
 
 ```bash
-sudo netsudo revoke last
+netsudo revoke last
 ```
 
 If you later change `netsudo.toml`, apply the updated policy to pfSense again:
@@ -143,6 +143,8 @@ netsudo-install --config ./netsudo.toml --setup-only
 Use a dedicated pfSense SSH user.
 
 Do not store pfSense admin passwords in `netsudo.toml`. The intended model is local `sudo` plus a dedicated SSH key.
+
+For profiles with `require_sudo = true`, run `netsudo allow ...` as your normal user. `netsudo` will invoke local `sudo` itself when needed. This avoids the common `sudo: netsudo: command not found` problem caused by `pip --user` installing the command under `~/.local/bin`.
 
 The installer can generate a dedicated SSH key and install the public key on pfSense. It may prompt for the pfSense account password through `ssh` or `ssh-copy-id`, but it does not store that password.
 
@@ -171,11 +173,11 @@ See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.
 netsudo render-policy --config ./netsudo.toml
 netsudo install-helper --config ./netsudo.toml
 netsudo-install --config ./netsudo.toml --setup-only
-sudo netsudo allow admin --for 20m --reason "maintenance"
-sudo netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "maintenance"
+netsudo allow admin --for 20m --reason "maintenance"
+netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "maintenance"
 netsudo status
-sudo netsudo revoke last
-sudo netsudo prune
+netsudo revoke last
+netsudo prune
 ```
 
 ## Current status

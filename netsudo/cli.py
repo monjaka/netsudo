@@ -10,6 +10,7 @@ import os
 import platform
 import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import time
@@ -24,9 +25,14 @@ from .source import detect_source_ip, validate_source_ip
 from .transport import TransportError, copy_file, run_helper, run_ssh, shell_quote
 
 
+SUDO_REEXEC_ENV = "NETSUDO_SUDO_REEXEC"
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(raw_argv)
+    args._netsudo_argv = raw_argv
     try:
         return args.func(args)
     except (FileNotFoundError, ValueError, RuntimeError, TransportError) as exc:
@@ -139,7 +145,7 @@ def cmd_allow(args: argparse.Namespace) -> int:
         raise ValueError(f"unknown profile: {args.profile}")
 
     if profile.require_sudo and not args.no_sudo_check and hasattr(os, "geteuid") and os.geteuid() != 0:
-        raise RuntimeError(f"profile {profile.name} requires local sudo")
+        return rerun_with_sudo(args, config)
 
     duration = parse_duration(args.duration or config.defaults.duration_seconds)
     if duration > profile.max_duration_seconds:
@@ -158,7 +164,7 @@ def cmd_allow(args: argparse.Namespace) -> int:
         "source": source,
         "duration_seconds": duration,
         "reason": args.reason,
-        "requested_by": getpass.getuser(),
+        "requested_by": current_operator(),
         "request_host": socket.gethostname(),
         "client_platform": platform.platform(),
     }
@@ -182,6 +188,38 @@ def cmd_allow(args: argparse.Namespace) -> int:
     print(f"Profile: {grant['profile']}")
     print(f"Expires: {grant['expires_at']}")
     return 0
+
+
+def current_operator() -> str:
+    return os.environ.get("SUDO_USER") or getpass.getuser()
+
+
+def rerun_with_sudo(args: argparse.Namespace, config: Config) -> int:
+    if os.environ.get(SUDO_REEXEC_ENV) == "1":
+        raise RuntimeError(f"profile {args.profile} requires local sudo")
+
+    sudo = shutil.which("sudo")
+    if sudo is None:
+        raise RuntimeError(f"profile {args.profile} requires local sudo, but sudo was not found")
+
+    module_parent = str(Path(__file__).resolve().parent.parent)
+    pythonpath_parts = [module_parent]
+    if os.environ.get("PYTHONPATH"):
+        pythonpath_parts.append(os.environ["PYTHONPATH"])
+
+    command = [
+        sudo,
+        "env",
+        f"{SUDO_REEXEC_ENV}=1",
+        "PYTHONPATH=" + os.pathsep.join(pythonpath_parts),
+        sys.executable,
+        "-m",
+        "netsudo.cli",
+        *args._netsudo_argv,
+        "--config",
+        str(config.path.resolve()),
+    ]
+    return subprocess.call(command)
 
 
 def cmd_status(args: argparse.Namespace) -> int:

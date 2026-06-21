@@ -6,7 +6,7 @@
 
 There are two separate trust checks:
 
-- Local authorization: high-risk profiles default to `require_sudo = true`, so the operator must run the CLI with local sudo.
+- Local authorization: high-risk profiles default to `require_sudo = true`, so `netsudo` invokes local `sudo` before making the grant.
 - Firewall authorization: the CLI talks to a helper installed on pfSense over SSH. The helper accepts only profile names from the policy already installed on the firewall.
 
 Initial setup may use your normal pfSense admin account. After setup, prefer a dedicated SSH key and restrict that key to the helper command.
