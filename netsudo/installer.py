@@ -75,9 +75,9 @@ def install(config_path: Path, *, interactive: bool) -> None:
     print(f"Wrote {config_path}")
 
     if backend == "ssh" and confirm("Run netsudo setup now", False, interactive):
-        run(["netsudo", "setup", "--config", str(config_path)])
+        run_netsudo(["setup", "--config", str(config_path)])
     else:
-        print(f"Next: edit profiles in {config_path}, then run `netsudo setup --config {config_path}`")
+        print(f"Next: edit profiles in {config_path}, then run `python3 -m netsudo.cli setup --config {config_path}`")
 
 
 def ensure_ssh_key(path: Path) -> None:
@@ -178,9 +178,17 @@ def confirm(label: str, default: bool, interactive: bool) -> bool:
     return answer in {"y", "yes"}
 
 
-def run(command: list[str]) -> None:
+def run_netsudo(args: list[str]) -> None:
+    env = os.environ.copy()
+    package_root = Path(__file__).resolve().parents[1]
+    existing = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = str(package_root) if not existing else str(package_root) + os.pathsep + existing
+    run([sys.executable, "-m", "netsudo.cli", *args], env=env)
+
+
+def run(command: list[str], env: dict[str, str] | None = None) -> None:
     try:
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, env=env)
     except FileNotFoundError as exc:
         raise RuntimeError(f"missing command: {command[0]}") from exc
     except subprocess.CalledProcessError as exc:

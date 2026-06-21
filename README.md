@@ -45,7 +45,7 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
 1. Install the required system packages:
 
    ```bash
-   sudo dnf install -y git python3 python3-pip openssh-clients
+   sudo dnf install -y git python3 openssh-clients
    ```
 
 2. Clone the repository:
@@ -55,106 +55,84 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
    cd netsudo
    ```
 
-   If the repository is private and HTTPS clone fails, use SSH instead:
+3. Run the installer from the checkout:
 
    ```bash
-   git clone git@github.com:monjaka/netsudo.git
-   cd netsudo
+   python3 scripts/install.py
    ```
 
-3. Install `netsudo` for your user:
+4. Check the CLI from the checkout:
 
    ```bash
-   python3 -m pip install --user .
+   python3 -m netsudo.cli --version
    ```
 
-   This command must be run from inside the `netsudo` directory. If you run it from `~`, pip will fail because there is no `pyproject.toml` there.
-
-4. Make sure user-installed Python commands are on your shell path:
+5. After editing `netsudo.toml`, install the helper on pfSense:
 
    ```bash
-   export PATH="$HOME/.local/bin:$PATH"
+   python3 -m netsudo.cli setup --config ./netsudo.toml
    ```
 
-   To make that permanent for Bash:
+### Optional User Install
 
-   ```bash
-   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-   source ~/.bashrc
-   ```
-
-5. Check the install:
-
-   ```bash
-   netsudo --version
-   ```
-
-6. Start the interactive setup:
-
-   ```bash
-   netsudo-install
-   ```
-
-### From A Checkout Without Installing
-
-After cloning:
+If you prefer the shorter `netsudo` and `netsudo-install` commands, install the package from inside the cloned repository:
 
 ```bash
 cd netsudo
-python3 scripts/install.py
+python3 -m pip install --user .
 ```
+
+If your shell cannot find `netsudo` after that, use the checkout commands above or add Python's user script directory to your shell path.
 
 ## Quick Start
 
 Create a local config:
 
 ```bash
-netsudo init ./netsudo.toml
+python3 -m netsudo.cli init ./netsudo.toml
 ```
 
 Or use the installer:
 
 ```bash
 python3 scripts/install.py
-# or, after package install:
-netsudo-install
 ```
 
 Edit `netsudo.toml`, then install the helper and create pfSense aliases/rules:
 
 ```bash
-netsudo setup --config ./netsudo.toml
+python3 -m netsudo.cli setup --config ./netsudo.toml
 ```
 
 Grant access:
 
 ```bash
-sudo netsudo allow admin --for 20m --reason "maintenance"
+sudo python3 -m netsudo.cli allow admin --for 20m --reason "maintenance"
 ```
 
 Grant access for another device by specifying its source IP:
 
 ```bash
-sudo netsudo allow admin --source 192.168.6.60 --for 20m --reason "workstation maintenance"
+sudo python3 -m netsudo.cli allow admin --source 192.168.6.60 --for 20m --reason "workstation maintenance"
 ```
 
 Grant access to a narrower destination inside the profile scope:
 
 ```bash
-sudo netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"
-sudo netsudo allow admin --destination 192.168.9.0/24 --destination 192.168.115.100 --for 30m --reason "maintenance"
+sudo python3 -m netsudo.cli allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "check Wazuh"
+sudo python3 -m netsudo.cli allow admin --destination 192.168.9.0/24 --destination 192.168.115.100 --for 30m --reason "maintenance"
 ```
 
 Check grants:
 
 ```bash
-netsudo status
+python3 -m netsudo.cli status
 ```
 
 Revoke:
 
 ```bash
-sudo netsudo revoke last
+sudo python3 -m netsudo.cli revoke last
 ```
 
 ## Security notes
@@ -170,14 +148,14 @@ See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.
 ## Common commands
 
 ```bash
-netsudo render-policy --config ./netsudo.toml
-netsudo install-helper --config ./netsudo.toml
-netsudo setup --config ./netsudo.toml
-sudo netsudo allow admin --for 20m --reason "maintenance"
-sudo netsudo allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "maintenance"
-netsudo status
-sudo netsudo revoke last
-sudo netsudo prune
+python3 -m netsudo.cli render-policy --config ./netsudo.toml
+python3 -m netsudo.cli install-helper --config ./netsudo.toml
+python3 -m netsudo.cli setup --config ./netsudo.toml
+sudo python3 -m netsudo.cli allow admin --for 20m --reason "maintenance"
+sudo python3 -m netsudo.cli allow admin --source 192.168.6.60 --destination 192.168.115.100 --for 20m --reason "maintenance"
+python3 -m netsudo.cli status
+sudo python3 -m netsudo.cli revoke last
+sudo python3 -m netsudo.cli prune
 ```
 
 ## Current status
