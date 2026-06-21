@@ -128,7 +128,11 @@ def install(config_path: Path, *, interactive: bool, restrict_key_after_setup: b
         if should_restrict and key_path is not None:
             restrict_public_key(host=host, user=user, key_path=key_path, helper="/usr/local/sbin/netsudo-helper.php")
     else:
-        print(f"Next: edit profiles in {config_path}, then run `python3 -m netsudo.cli setup --config {config_path}`")
+        print(
+            f"Next: review/edit {config_path}, then run "
+            f"`python3 -m netsudo.cli setup --config {config_path}` to install the pfSense helper "
+            "and apply the policy generated from that config."
+        )
         if should_restrict:
             print(
                 "Key restriction was not applied because setup did not run now. "

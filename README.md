@@ -55,27 +55,31 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
    cd netsudo
    ```
 
-3. Run the installer from the checkout:
+3. Run the installer from the checkout. This creates `netsudo.toml` and can set up the SSH key:
 
    ```bash
    python3 scripts/install.py
    ```
 
-   The installer can create a dedicated SSH key, copy its public key to pfSense, and after setup optionally restrict that key so it can only run the netsudo helper.
+   The installer writes the local config file. It does not rely on the pfSense helper to configure that file.
 
-4. Check the CLI from the checkout:
+4. Review `netsudo.toml` and edit the profile destinations, interfaces, ports, and durations for your network.
 
-   ```bash
-   python3 -m netsudo.cli --version
-   ```
-
-5. After editing `netsudo.toml`, install the helper on pfSense:
+5. Install the pfSense helper and apply the policy generated from `netsudo.toml`:
 
    ```bash
    python3 -m netsudo.cli setup --config ./netsudo.toml
    ```
 
-6. If you did not restrict the SSH key during setup, you can do it later:
+   `setup` copies the helper to pfSense, uploads policy rendered from `netsudo.toml`, and creates/updates pfSense aliases and rules. It does not edit `netsudo.toml`.
+
+6. Check the CLI from the checkout:
+
+   ```bash
+   python3 -m netsudo.cli --version
+   ```
+
+7. If you did not restrict the SSH key during setup, you can do it later:
 
    ```bash
    python3 scripts/install.py --config ./netsudo.toml --restrict-key-only
@@ -106,7 +110,7 @@ Or use the installer:
 python3 scripts/install.py
 ```
 
-Edit `netsudo.toml`, then install the helper and create pfSense aliases/rules:
+Review/edit `netsudo.toml`, then run setup. Setup installs the pfSense helper and creates/updates aliases/rules from the config:
 
 ```bash
 python3 -m netsudo.cli setup --config ./netsudo.toml
