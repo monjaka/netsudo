@@ -54,6 +54,14 @@ Destination-scoped grants use temporary grant-specific pfSense aliases and rules
 
 The installer can write `batch_mode = false` for temporary password-prompt bootstrap configs, but the recommended steady state is `batch_mode = true` with a dedicated key.
 
+After the helper is installed, the installer can restrict the dedicated SSH key in `authorized_keys`. It writes a forced command wrapper and replaces the public key line with options equivalent to:
+
+```text
+no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty,no-user-rc,command="/usr/local/sbin/netsudo-ssh-wrapper.sh"
+```
+
+The wrapper allows only the helper actions used for day-to-day grants: `grant`, `status`, `revoke`, and `prune`. A restricted key cannot copy files, run an arbitrary shell, or perform bootstrap/update setup work.
+
 `backend = "rest"` is reserved as an experimental configuration option. The current release uses the SSH helper backend for live pfSense changes because it does not require the unofficial REST API package.
 
 ## Failure behavior

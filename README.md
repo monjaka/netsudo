@@ -61,6 +61,8 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
    python3 scripts/install.py
    ```
 
+   The installer can create a dedicated SSH key, copy its public key to pfSense, and after setup optionally restrict that key so it can only run the netsudo helper.
+
 4. Check the CLI from the checkout:
 
    ```bash
@@ -71,6 +73,12 @@ When `--destination` is used, `netsudo` creates temporary grant-specific aliases
 
    ```bash
    python3 -m netsudo.cli setup --config ./netsudo.toml
+   ```
+
+6. If you did not restrict the SSH key during setup, you can do it later:
+
+   ```bash
+   python3 scripts/install.py --config ./netsudo.toml --restrict-key-only
    ```
 
 ### Optional User Install
@@ -142,6 +150,8 @@ Use a dedicated pfSense SSH user or SSH key for automation. For best results, re
 Do not store pfSense admin passwords in `netsudo.toml`. The intended model is local `sudo` plus a dedicated SSH key.
 
 The installer can generate a dedicated SSH key and install the public key on pfSense. It may prompt for the pfSense account password through `ssh` or `ssh-copy-id`, but it does not store that password.
+
+After setup, the installer can restrict the dedicated key in pfSense `authorized_keys` with a forced command and disabled forwarding/PTY options. A restricted key is intended for day-to-day `allow`, `status`, `revoke`, and `prune` operations. Bootstrap tasks such as copying a new helper or policy still require an unrestricted admin SSH path.
 
 See [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md) for operational guidance.
 

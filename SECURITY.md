@@ -7,6 +7,7 @@
 - Use a dedicated pfSense automation account.
 - Use SSH keys, not stored passwords.
 - After initial setup, restrict the SSH key with a forced command that only runs the netsudo helper.
+- Keep an unrestricted admin SSH path separate for future helper or policy updates; the restricted key is for day-to-day grants.
 - Keep profile maximum durations short.
 - Keep delegated `--source` grants behind sudo-required profiles unless the scope is low risk.
 - Use `--destination` for narrow, task-specific access instead of broad profile-wide grants.

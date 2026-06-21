@@ -9,21 +9,49 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .config import load_config
 from .transport import shell_quote
 
 
 DEFAULT_CONFIG = Path("./netsudo.toml")
 DEFAULT_KEY = Path.home() / ".ssh" / "netsudo_pfsense"
+DEFAULT_WRAPPER = "/usr/local/sbin/netsudo-ssh-wrapper.sh"
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Configure netsudo for a pfSense firewall")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="config path to write")
     parser.add_argument("--non-interactive", action="store_true", help="write defaults without prompting")
+    parser.add_argument(
+        "--restrict-key-after-setup",
+        dest="restrict_key_after_setup",
+        action="store_true",
+        default=None,
+        help="after a successful setup run, lock the configured SSH key to the netsudo helper only",
+    )
+    parser.add_argument(
+        "--no-restrict-key-after-setup",
+        dest="restrict_key_after_setup",
+        action="store_false",
+        help="do not prompt to restrict the SSH key after setup",
+    )
+    parser.add_argument(
+        "--restrict-key-only",
+        action="store_true",
+        help="only restrict the SSH key from an existing config; helper must already be installed",
+    )
     args = parser.parse_args(argv)
 
     try:
-        install(Path(args.config).expanduser(), interactive=not args.non_interactive)
+        config_path = Path(args.config).expanduser()
+        if args.restrict_key_only:
+            restrict_key_from_config(config_path)
+        else:
+            install(
+                config_path,
+                interactive=not args.non_interactive,
+                restrict_key_after_setup=args.restrict_key_after_setup,
+            )
     except KeyboardInterrupt:
         print("\naborted", file=sys.stderr)
         return 130
@@ -33,26 +61,34 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def install(config_path: Path, *, interactive: bool) -> None:
+def install(config_path: Path, *, interactive: bool, restrict_key_after_setup: bool | None) -> None:
     print("netsudo installer")
-    print("This writes config and can bootstrap an SSH key. It does not store pfSense passwords.")
+    print("This writes netsudo.toml, can create a dedicated SSH key, and can install the pfSense helper.")
+    print("It may ask SSH for your pfSense password during bootstrap, but it does not store that password.")
 
-    host = prompt("pfSense host", "192.168.3.1", interactive)
-    user = prompt("pfSense SSH user", "admin", interactive)
-    backend = prompt_choice("Backend", ["ssh", "rest"], "ssh", interactive)
+    host = prompt("pfSense SSH hostname or IP used for setup", "192.168.3.1", interactive)
+    user = prompt("pfSense SSH username for initial setup", "admin", interactive)
+    backend = prompt_choice("pfSense control backend (ssh is recommended; rest is a placeholder)", ["ssh", "rest"], "ssh", interactive)
 
     identity_file = ""
     batch_mode = True
+    key_path: Path | None = None
     if backend == "ssh":
-        key_path = Path(prompt("Dedicated SSH key path", str(DEFAULT_KEY), interactive)).expanduser()
-        if confirm("Generate SSH key if missing", True if interactive else False, interactive):
+        key_path = Path(prompt("Local path for the dedicated netsudo SSH key", str(DEFAULT_KEY), interactive)).expanduser()
+        if key_pair_exists(key_path):
+            print(f"Using existing SSH key pair at {key_path}")
+        elif confirm("Create a dedicated Ed25519 SSH key at this path", True if interactive else False, interactive):
             ensure_ssh_key(key_path)
-            identity_file = str(key_path)
 
-        if identity_file and confirm("Install public key on pfSense now", True if interactive else False, interactive):
+        if key_pair_exists(key_path):
+            identity_file = str(key_path)
+        elif restrict_key_after_setup:
+            raise RuntimeError("key restriction requires a generated or existing SSH key pair")
+
+        if identity_file and confirm(f"Copy this key's public half to {user}@{host} now; SSH may ask for the pfSense password", True if interactive else False, interactive):
             install_public_key(host=host, user=user, key_path=key_path)
 
-        batch_mode = not confirm("Allow password prompts from netsudo commands", False, interactive)
+        batch_mode = not confirm("Allow future netsudo SSH commands to ask for a pfSense password if key auth fails", False, interactive)
     else:
         print("REST backend config is written as an experimental placeholder.")
         print("The current CLI release still uses the SSH helper backend for live changes.")
@@ -74,10 +110,34 @@ def install(config_path: Path, *, interactive: bool) -> None:
     os.chmod(config_path, 0o600)
     print(f"Wrote {config_path}")
 
-    if backend == "ssh" and confirm("Run netsudo setup now", False, interactive):
+    should_restrict = False
+    if backend == "ssh" and identity_file:
+        if restrict_key_after_setup is None:
+            should_restrict = confirm(
+                "After setup succeeds, restrict this SSH key on pfSense so it can only run the netsudo helper",
+                True if interactive else False,
+                interactive,
+            )
+        else:
+            should_restrict = restrict_key_after_setup
+    elif restrict_key_after_setup:
+        raise RuntimeError("key restriction requires an SSH identity_file in the generated config")
+
+    if backend == "ssh" and confirm("Run setup now to install the helper and pfSense aliases/rules", False, interactive):
         run_netsudo(["setup", "--config", str(config_path)])
+        if should_restrict and key_path is not None:
+            restrict_public_key(host=host, user=user, key_path=key_path, helper="/usr/local/sbin/netsudo-helper.php")
     else:
         print(f"Next: edit profiles in {config_path}, then run `python3 -m netsudo.cli setup --config {config_path}`")
+        if should_restrict:
+            print(
+                "Key restriction was not applied because setup did not run now. "
+                f"After setup succeeds, run `python3 scripts/install.py --config {config_path} --restrict-key-only`."
+            )
+
+
+def key_pair_exists(path: Path) -> bool:
+    return path.exists() and Path(str(path) + ".pub").exists()
 
 
 def ensure_ssh_key(path: Path) -> None:
@@ -86,6 +146,7 @@ def ensure_ssh_key(path: Path) -> None:
         print(f"Using existing key {path}")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Creating dedicated netsudo SSH key at {path}")
     run(["ssh-keygen", "-t", "ed25519", "-f", str(path), "-N", "", "-C", "netsudo-pfsense"])
     os.chmod(path, 0o600)
 
@@ -95,7 +156,7 @@ def install_public_key(*, host: str, user: str, key_path: Path) -> None:
     if not public.exists():
         raise RuntimeError(f"missing public key: {public}")
 
-    print("Installing public key. pfSense may prompt for the account password.")
+    print(f"Installing public key on {user}@{host}. pfSense may prompt for that account password.")
     if shutil.which("ssh-copy-id"):
         run(["ssh-copy-id", "-i", str(public), f"{user}@{host}"])
         return
@@ -107,6 +168,120 @@ def install_public_key(*, host: str, user: str, key_path: Path) -> None:
         "printf '%s\\n' " + shell_quote(public_key) + " >> ~/.ssh/authorized_keys"
     )
     run(["ssh", f"{user}@{host}", remote])
+
+
+def restrict_key_from_config(config_path: Path) -> None:
+    config = load_config(str(config_path))
+    if config.pfsense.backend != "ssh":
+        raise RuntimeError("key restriction only applies to the SSH backend")
+    if not config.pfsense.identity_file:
+        raise RuntimeError("config has no pfsense.identity_file to restrict")
+    restrict_public_key(
+        host=config.pfsense.host,
+        user=config.pfsense.user,
+        key_path=Path(config.pfsense.identity_file).expanduser(),
+        helper=config.pfsense.helper,
+    )
+
+
+def restrict_public_key(*, host: str, user: str, key_path: Path, helper: str) -> None:
+    public_key = read_public_key(key_path)
+    wrapper = restricted_wrapper_script(helper)
+    wrapper_path = DEFAULT_WRAPPER
+
+    print(f"Installing restricted-key wrapper at {wrapper_path} on {host}")
+    install_wrapper_remote(host=host, user=user, key_path=key_path, wrapper=wrapper, wrapper_path=wrapper_path)
+
+    restricted_line = restricted_authorized_key_line(public_key, wrapper_path=wrapper_path)
+    key_blob = public_key.split()[1]
+    awk_script = (
+        'BEGIN { found=0 } '
+        'index($0, blob) > 0 { if (!found) print new; found=1; next } '
+        '{ print } '
+        'END { if (!found) print new }'
+    )
+    remote = (
+        "umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; "
+        "awk -v blob="
+        + shell_quote(key_blob)
+        + " -v new="
+        + shell_quote(restricted_line)
+        + " "
+        + shell_quote(awk_script)
+        + " ~/.ssh/authorized_keys > ~/.ssh/authorized_keys.netsudo && "
+        "mv ~/.ssh/authorized_keys.netsudo ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+    )
+    run(ssh_command(host=host, user=user, key_path=key_path) + [remote])
+    print("Restricted the SSH key to the netsudo helper only.")
+    print("This key can run allow/status/revoke/prune, but it can no longer copy files or perform bootstrap updates.")
+
+
+def install_wrapper_remote(*, host: str, user: str, key_path: Path, wrapper: str, wrapper_path: str) -> None:
+    remote = (
+        "umask 077; cat > /tmp/netsudo-ssh-wrapper.sh && "
+        "install -m 0755 /tmp/netsudo-ssh-wrapper.sh "
+        + shell_quote(wrapper_path)
+        + " && rm -f /tmp/netsudo-ssh-wrapper.sh"
+    )
+    run(ssh_command(host=host, user=user, key_path=key_path) + [remote], input_text=wrapper)
+
+
+def ssh_command(*, host: str, user: str, key_path: Path | None = None) -> list[str]:
+    command = ["ssh"]
+    if key_path is not None:
+        command.extend(["-i", str(key_path)])
+    command.append(f"{user}@{host}")
+    return command
+
+
+def read_public_key(key_path: Path) -> str:
+    public = Path(str(key_path) + ".pub")
+    if not public.exists():
+        raise RuntimeError(f"missing public key: {public}")
+    public_key = public.read_text(encoding="utf-8").strip()
+    fields = public_key.split()
+    if len(fields) < 2 or not fields[0].startswith("ssh-"):
+        raise RuntimeError(f"invalid public key: {public}")
+    return public_key
+
+
+def restricted_authorized_key_line(public_key: str, *, wrapper_path: str = DEFAULT_WRAPPER) -> str:
+    options = [
+        "no-port-forwarding",
+        "no-X11-forwarding",
+        "no-agent-forwarding",
+        "no-pty",
+        "no-user-rc",
+        'command="' + wrapper_path.replace("\\", "\\\\").replace('"', '\\"') + '"',
+    ]
+    return ",".join(options) + " " + public_key
+
+
+def restricted_wrapper_script(helper: str) -> str:
+    helper_escaped = helper.replace("'", "'\"'\"'")
+    return f"""#!/bin/sh
+php="/usr/local/bin/php"
+helper='{helper_escaped}'
+original="${{SSH_ORIGINAL_COMMAND:-}}"
+
+case "$original" in
+    "$php '$helper' 'grant'"|"$php $helper grant")
+        exec "$php" "$helper" grant
+        ;;
+    "$php '$helper' 'status'"|"$php $helper status")
+        exec "$php" "$helper" status
+        ;;
+    "$php '$helper' 'revoke'"|"$php $helper revoke")
+        exec "$php" "$helper" revoke
+        ;;
+    "$php '$helper' 'prune'"|"$php $helper prune")
+        exec "$php" "$helper" prune
+        ;;
+esac
+
+echo "netsudo: this SSH key is restricted to netsudo helper commands" >&2
+exit 126
+"""
 
 
 def render_config(*, host: str, user: str, backend: str, identity_file: str, batch_mode: bool) -> str:
@@ -186,9 +361,9 @@ def run_netsudo(args: list[str]) -> None:
     run([sys.executable, "-m", "netsudo.cli", *args], env=env)
 
 
-def run(command: list[str], env: dict[str, str] | None = None) -> None:
+def run(command: list[str], env: dict[str, str] | None = None, input_text: str | None = None) -> None:
     try:
-        subprocess.run(command, check=True, env=env)
+        subprocess.run(command, check=True, env=env, input=input_text, text=input_text is not None)
     except FileNotFoundError as exc:
         raise RuntimeError(f"missing command: {command[0]}") from exc
     except subprocess.CalledProcessError as exc:
